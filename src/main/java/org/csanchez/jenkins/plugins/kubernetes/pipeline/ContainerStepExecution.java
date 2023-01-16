@@ -84,7 +84,7 @@ public class ContainerStepExecution extends StepExecution {
                         BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), decorator),
                         env
                 )
-                .withCallback(new ContainerExecCallback(decorator))
+                .withCallback(new CloseableExecCallback(decorator))
                 .start();
         return false;
     }
@@ -93,21 +93,6 @@ public class ContainerStepExecution extends StepExecution {
     public void stop(@NonNull Throwable cause) throws Exception {
         LOGGER.log(Level.FINE, "Stopping container step.");
         closeQuietly(getContext(), decorator);
-    }
-
-    private static class ContainerExecCallback extends BodyExecutionCallback.TailCall {
-
-        private static final long serialVersionUID = 6385838254761750483L;
-
-        private final Closeable[] closeables;
-
-        private ContainerExecCallback(Closeable... closeables) {
-            this.closeables = closeables;
-        }
-        @Override
-        public void finished(StepContext context) {
-            closeQuietly(context, closeables);
-        }
     }
 
 }

@@ -1,17 +1,19 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.EnvVars;
 import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Queue;
+import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.security.Permission;
 import hudson.slaves.AbstractCloudComputer;
-import io.fabric8.kubernetes.api.model.Container;
-import io.fabric8.kubernetes.api.model.Event;
-import io.fabric8.kubernetes.api.model.EventList;
-import io.fabric8.kubernetes.api.model.ObjectMeta;
-import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.dsl.LogWatch;
+import io.fabric8.kubernetes.client.dsl.PodResource;
 import jenkins.model.Jenkins;
 import org.acegisecurity.Authentication;
 import org.apache.commons.lang.StringUtils;
@@ -24,10 +26,7 @@ import org.kohsuke.stapler.framework.io.ByteBuffer;
 import org.kohsuke.stapler.framework.io.LargeText;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -131,18 +130,58 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> {
         Jenkins.get().checkPermission(Computer.EXTENDED_READ);
 
         ByteBuffer outputStream = new ByteBuffer();
+        LargeText text = new LargeText(outputStream, false);
         KubernetesSlave slave = getNode();
-        if(slave != null) {
+        if (slave != null) {
             KubernetesCloud cloud = slave.getKubernetesCloud();
             KubernetesClient client = cloud.connect();
-
             String namespace = StringUtils.defaultIfBlank(slave.getNamespace(), client.getNamespace());
+            PodResource resource = new EphemeralContainerAwarePodOperations(client)
+                    .inNamespace(namespace)
+                    .withName(getName());
 
-            client.pods().inNamespace(namespace).withName(getName())
-                    .inContainer(containerId).tailingLines(20).watchLog(outputStream);
+            // check if pod exists
+            Pod pod = resource.get();
+            if (pod == null) {
+                outputStream.write("Pod not found".getBytes());
+                text.markAsComplete();
+                text.doProgressText(req, rsp);
+                return;
+            }
+
+            // Check if container exists and is running (maybe terminated if ephemeral)
+            Optional<ContainerStatus> status = PodUtils.getContainerStatus(pod, containerId);
+            if (status.isPresent()) {
+                ContainerStatus cs = status.get();
+                if (cs.getState().getTerminated() != null) {
+                    outputStream.write("Container terminated".getBytes());
+                    text.markAsComplete();
+                    text.doProgressText(req, rsp);
+                    return;
+                }
+            } else {
+                outputStream.write("Container not found".getBytes());
+                text.markAsComplete();
+                text.doProgressText(req, rsp);
+                return;
+            }
+
+            // Get logs
+            try (LogWatch watch = new EphemeralContainerAwarePodOperations(client)
+                    .inNamespace(namespace)
+                    .withName(getName())
+                    .inContainer(containerId)
+                    .tailingLines(20)
+                    .watchLog(outputStream)) {
+                text.doProgressText(req, rsp);
+            } catch (KubernetesClientException kce) {
+                LOGGER.log(Level.WARNING, "Failed getting container logs for " + containerId, kce);
+            }
+        } else {
+            outputStream.write("Node not available".getBytes());
+            text.markAsComplete();
+            text.doProgressText(req, rsp);
         }
-
-        new LargeText(outputStream, false).doProgressText(req, rsp);
     }
 
     @Override
@@ -179,5 +218,18 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> {
         if (acceptingTasks) {
             launching = false;
         }
+    }
+
+    @NonNull
+    @Override
+    public EnvVars buildEnvironment(@NonNull TaskListener listener) throws IOException, InterruptedException {
+        EnvVars envVars = super.buildEnvironment(listener);
+        KubernetesSlave slave = getNode();
+        if (slave != null) {
+            KubernetesCloud cloud = slave.getKubernetesCloud();
+            envVars.put("KUBERNETES_CLOUD_EPHEMERAL_CONTAINERS_ENABLED", Boolean.toString(cloud.isEphemeralContainersEnabled()));
+        }
+
+        return envVars;
     }
 }

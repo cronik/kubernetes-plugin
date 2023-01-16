@@ -137,6 +137,8 @@ public class KubernetesCloud extends Cloud {
     @CheckForNull
     private PodRetention podRetention = PodRetention.getKubernetesCloudDefault();
 
+    private boolean ephemeralContainersEnabled = true;
+
     @DataBoundConstructor
     public KubernetesCloud(String name) {
         super(name);
@@ -510,6 +512,28 @@ public class KubernetesCloud extends Cloud {
         this.podRetention = podRetention;
     }
 
+    public Integer getWaitForPodSec() {
+        return waitForPodSec;
+    }
+
+    @DataBoundSetter
+    public void setWaitForPodSec(Integer waitForPodSec) {
+        this.waitForPodSec = waitForPodSec;
+    }
+
+    /**
+     * Are ephemeral containers enabled/allowed for this cluster.
+     * @return true if allowed
+     */
+    public boolean isEphemeralContainersEnabled() {
+        return ephemeralContainersEnabled;
+    }
+
+    @DataBoundSetter
+    public void setEphemeralContainersEnabled(boolean ephemeralContainersEnabled) {
+        this.ephemeralContainersEnabled = ephemeralContainersEnabled;
+    }
+
     /**
      * Connects to Kubernetes.
      *
@@ -683,7 +707,8 @@ public class KubernetesCloud extends Cloud {
                 Objects.equals(podLabels, that.podLabels) &&
                 Objects.equals(podRetention, that.podRetention) &&
                 Objects.equals(waitForPodSec, that.waitForPodSec) &&
-                useJenkinsProxy==that.useJenkinsProxy;
+                useJenkinsProxy == that.useJenkinsProxy &&
+                ephemeralContainersEnabled == that.ephemeralContainersEnabled;
     }
 
     @Override
@@ -691,16 +716,7 @@ public class KubernetesCloud extends Cloud {
         return Objects.hash(name, defaultsProviderTemplate, templates, serverUrl, serverCertificate, skipTlsVerify,
                 addMasterProxyEnvVars, capOnlyOnAlivePods, namespace, jnlpregistry, jenkinsUrl, jenkinsTunnel, credentialsId,
                 containerCap, retentionTimeout, connectTimeout, readTimeout, podLabels, usageRestricted,
-                maxRequestsPerHost, podRetention, useJenkinsProxy);
-    }
-
-    public Integer getWaitForPodSec() {
-        return waitForPodSec;
-    }
-
-    @DataBoundSetter
-    public void setWaitForPodSec(Integer waitForPodSec) {
-        this.waitForPodSec = waitForPodSec;
+                maxRequestsPerHost, podRetention, useJenkinsProxy, ephemeralContainersEnabled);
     }
 
     @Extension
@@ -842,6 +858,7 @@ public class KubernetesCloud extends Cloud {
             return FormValidation.ok();
         }
 
+        @SuppressWarnings("unused") // used by jelly
         public FormValidation doCheckWebSocket(@QueryParameter boolean webSocket, @QueryParameter boolean directConnection, @QueryParameter String jenkinsTunnel) {
             if (webSocket) {
                 if (!WebSockets.isSupported()) {
@@ -887,6 +904,7 @@ public class KubernetesCloud extends Cloud {
             return DEFAULT_RETENTION_TIMEOUT_MINUTES;
         }
 
+        @SuppressWarnings("unused") // used by jelly
         public int getDefaultWaitForPod() {
             return DEFAULT_WAIT_FOR_POD_SEC;
         }
@@ -919,6 +937,7 @@ public class KubernetesCloud extends Cloud {
                 ", waitForPodSec=" + waitForPodSec +
                 ", podRetention=" + podRetention +
                 ", useJenkinsProxy=" + useJenkinsProxy +
+                ", ephemeralContainersEnabled=" + ephemeralContainersEnabled +
                 ", templates=" + templates +
                 '}';
     }

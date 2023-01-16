@@ -17,7 +17,8 @@
 package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
 
-import io.fabric8.kubernetes.api.model.Status;
+import io.fabric8.kubernetes.api.model.*;
+
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.FilterOutputStream;
@@ -44,10 +45,12 @@ import java.util.Set;
 import java.util.regex.Matcher;
 
 import hudson.AbortException;
-import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.client.dsl.*;
 import org.apache.commons.io.output.TeeOutputStream;
 import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
+import org.csanchez.jenkins.plugins.kubernetes.EphemeralContainerAwarePodOperations;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
+import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -60,8 +63,6 @@ import hudson.model.Computer;
 import hudson.model.Node;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.fabric8.kubernetes.client.dsl.ExecListener;
-import io.fabric8.kubernetes.client.dsl.ExecWatch;
 
 import static org.csanchez.jenkins.plugins.kubernetes.pipeline.Constants.EXIT;
 
@@ -237,7 +238,6 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
 
     @Override
     public Launcher decorate(final Launcher launcher, final Node node) {
-
         //Allows other nodes to be provisioned inside the container clause
         //If the node is not a KubernetesSlave return the original launcher
         if(node != null && !(node instanceof KubernetesSlave)) {
@@ -255,13 +255,8 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         ? containerWorkingDirFilePath.getRemote() : ContainerTemplate.DEFAULT_WORKING_DIR;
                 String containerWorkingDirStr = ContainerTemplate.DEFAULT_WORKING_DIR;
                 if (slave != null && slave.getPod().isPresent() && containerName != null) {
-                    Optional<Container> container = slave.getPod().get().getSpec().getContainers().stream()
-                            .filter(container1 -> container1.getName().equals(containerName))
-                            .findAny();
-                    Optional<String> containerWorkingDir = Optional.empty();
-                    if (container.isPresent() && container.get().getWorkingDir() != null) {
-                        containerWorkingDir = Optional.of(container.get().getWorkingDir());
-                    }
+                    Optional<String> containerWorkingDir = PodUtils.getContainerWorkingDir(slave.getPod().get(), containerName);
+
                     if (containerWorkingDir.isPresent()) {
                         containerWorkingDirStr = containerWorkingDir.get();
                     }
@@ -351,7 +346,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 // Do not send this command to the output when in quiet mode
                 if (quiet) {
                     stream = toggleStdout;
-                    printStream = new PrintStream(stream, true, StandardCharsets.UTF_8.toString());
+                    printStream = new PrintStream(stream, true, StandardCharsets.UTF_8);
                 } else {
                     printStream = launcher.getListener().getLogger();
                     stream = new TeeOutputStream(toggleStdout, printStream);
@@ -408,7 +403,10 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         final CountDownLatch finished = new CountDownLatch(1);
                         final AtomicLong startAlive = new AtomicLong();
 
-                        ExecWatch watch = getClient().pods().inNamespace(getNamespace()).withName(getPodName()).inContainer(containerName)
+                        ExecWatch watch = new EphemeralContainerAwarePodOperations(getClient())
+                            .inNamespace(getNamespace())
+                            .withName(getPodName())
+                            .inContainer(containerName)
                             .redirectingInput(STDIN_BUFFER_SIZE) // JENKINS-50429
                             .writingOutput(stream)
                             .writingError(stream)
@@ -446,6 +444,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                                     finished.countDown();
                                 }
                             }).exec(sh);
+
                         // prevent a wait forever if the connection is closed as the listener would never be called
                         try {
                             if (started.await(WEBSOCKET_CONNECTION_TIMEOUT, TimeUnit.SECONDS)) {
@@ -517,7 +516,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         envVars.overrideAll(globalVars);
                     }
 
-                    if(rcEnvVars != null) {
+                    if (rcEnvVars != null) {
                         envVars.overrideAll(rcEnvVars);
                     }
 
@@ -818,4 +817,5 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 .map(ev -> ev.replaceAll("\\$\\$", Matcher.quoteReplacement("$")))
                 .toArray(String[]::new);
     }
+
 }

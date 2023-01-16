@@ -45,13 +45,11 @@ class KubernetesNodeContext implements Serializable {
         this.namespace = agent.getNamespace();
     }
 
-    // TODO remove the Exception thrown
-    String getPodName() throws Exception {
+    String getPodName() {
         return podName;
     }
 
-    // TODO remove the Exception thrown
-    public String getNamespace() throws Exception {
+    public String getNamespace() {
         return namespace;
     }
 
@@ -59,7 +57,7 @@ class KubernetesNodeContext implements Serializable {
         return getKubernetesSlave().getKubernetesCloud().connect();
     }
 
-    private KubernetesSlave getKubernetesSlave() throws IOException, InterruptedException {
+    KubernetesSlave getKubernetesSlave() throws IOException, InterruptedException {
         Node node = context.get(Node.class);
         if (!(node instanceof KubernetesSlave)) {
             throw new AbortException(
