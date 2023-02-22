@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>4.53</version>
+    <version>4.54</version>
     <relativePath/>
   </parent>
 
@@ -56,7 +56,7 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>kubernetes-client-api</artifactId>
-      <version>6.3.1-206.v76d3b_6b_14db_b</version>
+      <version>6.4.1-208.vfe09a_9362c2c</version>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
@@ -253,7 +253,7 @@
       <dependency>
         <groupId>io.jenkins.tools.bom</groupId>
         <artifactId>bom-2.361.x</artifactId>
-        <version>1742.vb_70478c1b_25f</version>
+        <version>1836.vfe602c266c05</version>
         <scope>import</scope>
         <type>pom</type>
       </dependency>
@@ -269,6 +269,7 @@
           <systemPropertyVariables>
             <hudson.slaves.NodeProvisioner.initialDelay>0</hudson.slaves.NodeProvisioner.initialDelay>
             <hudson.slaves.NodeProvisioner.recurrencePeriod>3000</hudson.slaves.NodeProvisioner.recurrencePeriod>
+            <org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis>60000</org.jenkinsci.plugins.workflow.support.pickles.ExecutorPickle.timeoutForNodeMillis>
             <!-- listen in this interface for connections from kubernetes pods -->
             <connectorHost>${connectorHost}</connectorHost>
             <!-- have pods connect to this address for Jenkins -->
