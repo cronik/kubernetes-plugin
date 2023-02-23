@@ -17,8 +17,6 @@
 package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
 
-import io.fabric8.kubernetes.api.model.*;
-
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.FilterOutputStream;
@@ -240,7 +238,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
     public Launcher decorate(final Launcher launcher, final Node node) {
         //Allows other nodes to be provisioned inside the container clause
         //If the node is not a KubernetesSlave return the original launcher
-        if(node != null && !(node instanceof KubernetesSlave)) {
+        if (node != null && !(node instanceof KubernetesSlave)) {
            return launcher;
         }
         return new Launcher.DecoratedLauncher(launcher) {
@@ -492,12 +490,12 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                     // Depends on the ping time with the Kubernetes API server
                     // Not fully satisfied with this solution because it can delay the execution
                     if (finished.await(COMMAND_FINISHED_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                        launcher.getListener().error("Process exited immediately after creation. See output below%n%s", stdout.toString(StandardCharsets.UTF_8.name()));
+                        launcher.getListener().error("Process exited immediately after creation. See output below%n%s", stdout.toString(StandardCharsets.UTF_8));
                         throw new AbortException("Process exited immediately after creation. Check logs above for more details.");
                     }
                     toggleStdout.disable();
                     OutputStream stdin = watch.getInput();
-                    PrintStream in = new PrintStream(stdin, true, StandardCharsets.UTF_8.name());
+                    PrintStream in = new PrintStream(stdin, true, StandardCharsets.UTF_8);
                     if (!launcher.isUnix()) {
                         in.print("@echo off");
                         in.print(newLine(true));
@@ -505,7 +503,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                     if (pwd != null) {
                         // We need to get into the project workspace.
                         // The workspace is not known in advance, so we have to execute a cd command.
-                        in.print(String.format("cd \"%s\"", pwd));
+                        in.printf("cd \"%s\"", pwd);
                         in.print(newLine(!launcher.isUnix()));
                     }
 
@@ -543,7 +541,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         stream.flush();
                         long beginning = System.currentTimeMillis();
                         // watch for the prompt character
-                        while(!dryRunCaller.toString(StandardCharsets.UTF_8.name()).contains(">")) {
+                        while(!dryRunCaller.toString(StandardCharsets.UTF_8).contains(">")) {
                             Thread.sleep(100);
                         }
                         LOGGER.log(Level.FINEST, "Windows prompt printed after " + (System.currentTimeMillis() - beginning) + " ms");

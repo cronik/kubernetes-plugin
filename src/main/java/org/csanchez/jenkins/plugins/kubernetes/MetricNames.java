@@ -15,6 +15,8 @@ public class MetricNames {
     public static final String PROVISION_NODES = PREFIX + ".provision.nodes";
     public static final String PROVISION_FAILED = PREFIX + ".provision.failed";
     public static final String PODS_LAUNCHED = PREFIX + ".pods.launched";
+    public static final String EPHEMERAL_CONTAINERS_CREATED = PREFIX + ".containers.ephemeral.created";
+    public static final String EPHEMERAL_CONTAINERS_CREATION_FAILED = PREFIX + ".containers.ephemeral.creation.failed";
 
     public static String metricNameForPodStatus(String status) {
         String formattedStatus = status == null ? "null" : status.toLowerCase();

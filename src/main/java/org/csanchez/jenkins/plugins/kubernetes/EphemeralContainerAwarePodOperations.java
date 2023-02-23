@@ -1,6 +1,8 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
 import java.io.OutputStream;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -68,7 +70,15 @@ public class EphemeralContainerAwarePodOperations extends PodOperationsImpl {
 
     @Override
     public Pod require() {
-        Pod p = super.require();
+        return patchPodEphemeralContainers(super.require());
+    }
+
+    @Override
+    public Pod waitUntilCondition(Predicate<Pod> condition, long amount, TimeUnit timeUnit) {
+        return patchPodEphemeralContainers(super.waitUntilCondition(condition, amount, timeUnit));
+    }
+
+    private Pod patchPodEphemeralContainers(Pod p) {
         // hack to make ephemeral container appear to be a container
         p.getSpec().getEphemeralContainers().forEach(ec -> {
             p.getSpec().getContainers().add(new ContainerBuilder().withName(ec.getName()).build());
