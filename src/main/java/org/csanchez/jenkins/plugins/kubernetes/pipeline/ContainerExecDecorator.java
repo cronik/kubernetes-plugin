@@ -559,7 +559,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                     }
                     doExec(in, !launcher.isUnix(), printStream, masks, commands);
 
-                    LOGGER.log(Level.INFO, "Created process inside pod: [" + getPodName() + "], container: ["
+                    LOGGER.fine(() -> "Created process inside pod: [" + getPodName() + "], container: ["
                             + containerName + "]" + "[" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startMethod) + " ms]");
                     ContainerExecProc proc = new ContainerExecProc(watch, alive, finished, stdin);
                     closables.add(proc);

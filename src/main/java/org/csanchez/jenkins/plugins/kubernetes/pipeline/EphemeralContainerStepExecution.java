@@ -7,13 +7,16 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.codahale.metrics.MetricRegistry;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
@@ -27,13 +30,17 @@ import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.NodePropertyDescriptor;
 import hudson.util.DescribableList;
+
+import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.EphemeralContainer;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.SecurityContext;
+import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.PodResource;
 import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
@@ -41,10 +48,24 @@ import io.fabric8.kubernetes.client.dsl.internal.PodOperationContext;
 import io.fabric8.kubernetes.client.dsl.internal.core.v1.PodOperationsImpl;
 import jenkins.metrics.api.Metrics;
 import jenkins.model.Jenkins;
-import org.csanchez.jenkins.plugins.kubernetes.*;
-import org.jenkinsci.plugins.workflow.steps.*;
 
-public class EphemeralContainerStepExecution extends StepExecution {
+import org.apache.commons.lang.StringUtils;
+import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
+import org.csanchez.jenkins.plugins.kubernetes.EphemeralContainerAwarePodOperations;
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
+import org.csanchez.jenkins.plugins.kubernetes.MetricNames;
+import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
+import org.csanchez.jenkins.plugins.kubernetes.PodTemplateBuilder;
+import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
+import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
+import org.jenkinsci.plugins.workflow.steps.GeneralNonBlockingStepExecution;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+
+
+public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecution {
 
     private static final long serialVersionUID = 7634132798345235774L;
 
@@ -53,17 +74,29 @@ public class EphemeralContainerStepExecution extends StepExecution {
     @SuppressFBWarnings(value = "SE_TRANSIENT_FIELD_NOT_RESTORED", justification = "not needed on deserialization")
     private final transient EphemeralContainerStep step;
 
+    @CheckForNull
     private ContainerExecDecorator decorator;
 
-    EphemeralContainerStepExecution(EphemeralContainerStep step, StepContext context) {
+    EphemeralContainerStepExecution(@NonNull EphemeralContainerStep step, @NonNull StepContext context) {
         super(context);
         this.step = step;
     }
 
     @Override
     public boolean start() throws Exception {
-        LOGGER.log(Level.FINE, "Starting ephemeral container step.");
+        KubernetesNodeContext nodeContext = new KubernetesNodeContext(getContext());
+        KubernetesSlave slave = nodeContext.getKubernetesSlave();
+        KubernetesCloud cloud = slave.getKubernetesCloud();
+        if (!cloud.isEphemeralContainersEnabled()) {
+            throw new AbortException("Ephemeral containers not enabled on " + cloud.getDisplayName());
+        }
 
+        run(this::startEphemeralContainer);
+        return false;
+    }
+
+    protected void startEphemeralContainer() throws Exception {
+        LOGGER.log(Level.FINE, "Starting ephemeral container step.");
         KubernetesNodeContext nodeContext = new KubernetesNodeContext(getContext());
         KubernetesSlave slave = nodeContext.getKubernetesSlave();
         KubernetesCloud cloud = slave.getKubernetesCloud();
@@ -97,6 +130,7 @@ public class EphemeralContainerStepExecution extends StepExecution {
 
         // Display link in the build console to the new container
         TaskListener listener = getContext().get(TaskListener.class);
+        String containerUrl = ModelHyperlinkNote.encodeTo("/computer/" + nodeContext.getPodName() + "/container?name=" + containerName, containerName);
         if (listener != null) {
             String runningAs = "";
             SecurityContext sc = ec.getSecurityContext();
@@ -105,36 +139,88 @@ public class EphemeralContainerStepExecution extends StepExecution {
             }
 
             // Add link to the container logs
-            String containerUrl = ModelHyperlinkNote.encodeTo("/computer/" + nodeContext.getPodName() + "/container?name=" + containerName, containerName);
             listener.getLogger().println("Starting ephemeral container " + containerUrl + " with image " + ec.getImage() + runningAs);
         }
 
         // Patch the Pod with the new ephemeral container
         KubernetesClient client = nodeContext.connectToCloud();
         PodResource podResource = client.pods().withName(nodeContext.getPodName());
-        Pod pod = podResource.get();
-        pod.getSpec().getEphemeralContainers().add(ec);
         PodResource pr = EphemeralPodOperations.forPod(client, slave.getPodName());
         MetricRegistry metrics = Metrics.metricRegistry();
         try {
-            pr.patch(pod);
+            // Current implementation of ephemeral containers only allows ephemeral containers to be added
+            // so patching may fail if different threads attempt to add using the same resource version
+            // which would effectively act as a "delete" when the second patch was processed. If this
+            // situation is detected the patch will be retried.
+            int maxRetries = 3;
+            int retries = 0;
+            do {
+                try {
+                    pr.edit(pod -> {
+                        pod.getSpec().getEphemeralContainers().add(ec);
+                        return pod;
+                    });
+
+                    break; // Success
+                } catch (KubernetesClientException kce) {
+                    Status status = kce.getStatus();
+                    if (retries < maxRetries
+                            && status != null
+                            && StringUtils.contains(status.getMessage(), "Forbidden: existing ephemeral containers")) {
+                        retries++;
+                        LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + maxRetries + "): " + kce.getMessage());
+                    } else {
+                        throw kce;
+                    }
+                }
+            } while (true);
         } catch (KubernetesClientException kce) {
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATION_FAILED).inc();
-            LOGGER.log(Level.WARNING, "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName(), kce);
-            throw new AbortException("Ephemeral container could not be added");
+            LOGGER.log(Level.WARNING, "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName() + " on cloud " + cloud.name, kce);
+            String message = "Ephemeral container could not be added.";
+            Status status = kce.getStatus();
+            if (status != null) {
+                if (status.getMessage() != null) {
+                    message += status.getMessage();
+                }
+
+                message += " (" + status.getReason() + ")";
+            }
+
+            throw new AbortException(message);
         }
 
-        // Wait until ephemeral container has started\
+        // Wait until ephemeral container has started
         LOGGER.fine(() -> "Waiting for Ephemeral Container to start: " + containerName);
         try {
-            podResource.waitUntilCondition(new EphemeralContainerStatusCondition(containerName, true), pt.getSlaveConnectTimeout(), TimeUnit.SECONDS);
+            podResource.waitUntilCondition(new EphemeralContainerRunningCondition(containerName, containerUrl, listener), pt.getSlaveConnectTimeout(), TimeUnit.SECONDS);
+            // TODO remove with client 4.5.0
             slave.getPod().ifPresent(sp -> sp.getSpec().getEphemeralContainers().add(ec));
             LOGGER.fine(() -> "Ephemeral Container started: " + containerName);
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATED).inc();
         } catch (KubernetesClientException kce) {
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATION_FAILED).inc();
-            String status = PodUtils.getContainerStatus(podResource.get(), containerName).map(cs -> cs.getState().toString()).orElse("status unknown");
-            throw new AbortException("Ephemeral container failed to start after " + pt.getSlaveConnectTimeout() + " seconds: " + status);
+            if (kce instanceof KubernetesClientTimeoutException) {
+                String status;
+                try {
+                    status = PodUtils.getContainerStatus(podResource.get(), containerName)
+                            .map(cs -> cs.getState().toString())
+                            .orElse("no status available");
+                } catch (Exception ignored) {
+                    status = "failed to get status";
+                }
+
+                throw new AbortException("Ephemeral container failed to start after " + pt.getSlaveConnectTimeout() + " seconds: " + status);
+            } else {
+                Throwable cause = kce.getCause();
+                if (cause instanceof InterruptedException) {
+                    LOGGER.log(Level.FINEST, "Ephemeral container step interrupted", kce);
+                    return;
+                } else {
+                    LOGGER.log(Level.FINEST, "Ephemeral container failed to start due to kubernetes client exception", kce);
+                    throw new AbortException("Ephemeral container " + containerName + " failed to start: " + kce.getMessage());
+                }
+            }
         }
 
         EnvironmentExpander env = EnvironmentExpander.merge(
@@ -173,14 +259,16 @@ public class EphemeralContainerStepExecution extends StepExecution {
                 .withCallback(new CloseableExecCallback(decorator))
                 .withCallback(new TerminateEphemeralContainerExecCallback(containerName))
                 .start();
-        return false;
     }
 
     @Override
     public void stop(@NonNull Throwable cause) throws Exception {
-        LOGGER.fine("Stopping ephemeral container step.");
-        closeQuietly(getContext(), decorator);
-        terminateEphemeralContainer(getContext(), decorator.getContainerName());
+        LOGGER.finest("Stopping ephemeral container step.");
+        super.stop(cause);
+        if (decorator != null) {
+            closeQuietly(getContext(), decorator);
+            terminateEphemeralContainer(getContext(), decorator.getContainerName());
+        }
     }
 
     private void setDefaultRunAsUser(ContainerTemplate template) throws IOException, InterruptedException {
@@ -228,10 +316,14 @@ public class EphemeralContainerStepExecution extends StepExecution {
             LOGGER.log(Level.WARNING, "failed to terminate ephemeral container: " + containerName, ex);
         }
 
+
         LOGGER.finest(() -> {
-            Pod pod = resource.get();
-            ContainerStatus status = PodUtils.getContainerStatus(pod, containerName).orElse(null);
-            return "Ephemeral container status after step: " + containerName + " -> " + status;
+            try {
+                ContainerStatus status = PodUtils.getContainerStatus(resource.get(), containerName).orElse(null);
+                return "Ephemeral container status after step: " + containerName + " -> " + status;
+            } catch (KubernetesClientException ignored) {
+                return "Failed to get container status after step";
+            }
         });
     }
 
@@ -248,6 +340,7 @@ public class EphemeralContainerStepExecution extends StepExecution {
         public void finished(StepContext context) throws Exception {
             terminateEphemeralContainer(context, containerName);
         }
+
     }
 
     private static class EphemeralContainerStatusCondition implements Predicate<Pod> {
@@ -266,7 +359,7 @@ public class EphemeralContainerStepExecution extends StepExecution {
                     .stream()
                     .filter(status -> status.getName().equals(containerName))
                     .anyMatch(status -> {
-                        LOGGER.finest(() -> "Ephemeral Container state: " + status.getState());
+                        onStatus(status);
                         if (running) {
                             return status.getState().getRunning() != null;
                         } else {
@@ -274,6 +367,45 @@ public class EphemeralContainerStepExecution extends StepExecution {
                         }
                     });
         }
+
+        protected void onStatus(ContainerStatus status) {
+        }
+
+    }
+
+    private static class EphemeralContainerRunningCondition extends EphemeralContainerStatusCondition {
+
+        private static final Set<String> IGNORE_REASONS = new HashSet<>(Arrays.asList("ContainerCreating", "PodInitializing"));
+        @CheckForNull
+        private final TaskListener taskListener;
+        private final String containerUrl;
+
+        EphemeralContainerRunningCondition(String containerName, String containerUrl, @CheckForNull TaskListener listener) {
+            super(containerName, true);
+            this.containerUrl = containerUrl;
+            this.taskListener = listener;
+        }
+
+        @Override
+        protected void onStatus(ContainerStatus status) {
+            if (taskListener != null) {
+                ContainerStateWaiting waiting = status.getState().getWaiting();
+                // skip initial "ContainerCreating" event
+                if (waiting != null  && !IGNORE_REASONS.contains(waiting.getReason())) {
+                    StringBuilder logMsg = new StringBuilder()
+                            .append("Ephemeral container ")
+                            .append(containerUrl);
+                    String message = waiting.getMessage();
+                    if (message != null) {
+                        logMsg.append(" ").append(message);
+                    }
+
+                    logMsg.append(" (").append(waiting.getReason()).append(")");
+                    taskListener.getLogger().println(logMsg);
+                }
+            }
+        }
+
     }
 
     /**
@@ -309,5 +441,7 @@ public class EphemeralContainerStepExecution extends StepExecution {
         protected <T> String checkName(T item) {
             return getName();
         }
+
     }
+
 }
