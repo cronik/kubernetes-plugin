@@ -24,7 +24,11 @@
 
 package org.csanchez.jenkins.plugins.kubernetes;
 
-import hudson.util.IOUtils;
+import static org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud.JNLP_NAME;
+import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.combine;
+import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.isNullOrEmpty;
+import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.substituteEnv;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -45,30 +49,41 @@ import java.util.stream.Collectors;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.TcpSlaveAgentListener;
 import hudson.Util;
-import io.fabric8.kubernetes.api.model.*;
+import hudson.slaves.SlaveComputer;
+import hudson.util.IOUtils;
+import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.ContainerPort;
+import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.EphemeralContainer;
+import io.fabric8.kubernetes.api.model.EphemeralContainerBuilder;
+import io.fabric8.kubernetes.api.model.ExecAction;
+import io.fabric8.kubernetes.api.model.LocalObjectReference;
+import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.api.model.PodFluent.MetadataNested;
+import io.fabric8.kubernetes.api.model.PodFluent.SpecNested;
+import io.fabric8.kubernetes.api.model.PodSpecFluent;
+import io.fabric8.kubernetes.api.model.Probe;
+import io.fabric8.kubernetes.api.model.ProbeBuilder;
+import io.fabric8.kubernetes.api.model.Quantity;
+import io.fabric8.kubernetes.api.model.ResourceRequirements;
+import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
+import io.fabric8.kubernetes.api.model.Volume;
+import io.fabric8.kubernetes.api.model.VolumeMount;
+import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
+import io.fabric8.kubernetes.client.utils.Serialization;
+import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
 import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
 import org.csanchez.jenkins.plugins.kubernetes.pipeline.PodTemplateStepExecution;
 import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecorator;
-import org.csanchez.jenkins.plugins.kubernetes.volumes.PodVolume;
 import org.csanchez.jenkins.plugins.kubernetes.volumes.ConfigMapVolume;
+import org.csanchez.jenkins.plugins.kubernetes.volumes.PodVolume;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
-
-import hudson.TcpSlaveAgentListener;
-import hudson.slaves.SlaveComputer;
-import io.fabric8.kubernetes.api.model.PodFluent.MetadataNested;
-import io.fabric8.kubernetes.api.model.PodFluent.SpecNested;
-import io.fabric8.kubernetes.client.utils.Serialization;
-import jenkins.model.Jenkins;
-
-import static org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud.JNLP_NAME;
-import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.combine;
-import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.isNullOrEmpty;
-import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.substituteEnv;
-
-import javax.swing.text.html.Option;
 
 /**
  * Helper class to build Pods from PodTemplates

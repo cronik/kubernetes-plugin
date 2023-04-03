@@ -16,26 +16,31 @@
 
 package org.csanchez.jenkins.plugins.kubernetes;
 
-import edu.umd.cs.findbugs.annotations.CheckForNull;
-import edu.umd.cs.findbugs.annotations.NonNull;
-import hudson.Util;
-import hudson.model.Queue;
-import io.fabric8.kubernetes.api.model.*;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientException;
-import java.util.Map;
-import jenkins.model.Jenkins;
-import org.apache.commons.lang.RandomStringUtils;
-import org.apache.commons.lang.StringUtils;
-
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Util;
+import hudson.model.Queue;
+import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.api.model.ContainerStatus;
+import io.fabric8.kubernetes.api.model.EphemeralContainer;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodStatus;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
+import jenkins.model.Jenkins;
+import org.apache.commons.lang.RandomStringUtils;
+import org.apache.commons.lang.StringUtils;
 
 public final class PodUtils {
     private static final Logger LOGGER = Logger.getLogger(PodUtils.class.getName());
@@ -54,7 +59,13 @@ public final class PodUtils {
         return getContainers(pod, CONTAINER_IS_WAITING);
     }
 
-    public static List<ContainerStatus> getContainerStatus(Pod pod) {
+    /**
+     * Get all container statuses (does not include ephemeral or init containers).
+     * @param pod pod to get container statuses for
+     * @return list of statuses, possibly empty, never null
+     */
+    @NonNull
+    public static List<ContainerStatus> getContainerStatus(@NonNull Pod pod) {
         PodStatus podStatus = pod.getStatus();
         if (podStatus == null) {
             return Collections.emptyList();
@@ -62,7 +73,13 @@ public final class PodUtils {
         return podStatus.getContainerStatuses();
     }
 
-    public static List<ContainerStatus> getContainers(Pod pod, Predicate<ContainerStatus> predicate) {
+    /**
+     * Get pod container statuses (does not include ephemeral or init containers) that match the given filter.
+     * @param pod pod to get container statuses for
+     * @param predicate container status predicate
+     * @return list of statuses, possibly empty, never null
+     */
+    public static List<ContainerStatus> getContainers(@NonNull Pod pod, Predicate<ContainerStatus> predicate) {
         return getContainerStatus(pod).stream().filter(predicate).collect(Collectors.toList());
     }
 

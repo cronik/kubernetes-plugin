@@ -404,6 +404,7 @@ public class KubernetesSlave extends AbstractCloudSlave {
                 }
             }
         }
+
         return launcher;
     }
 

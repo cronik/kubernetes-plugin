@@ -33,6 +33,7 @@ import hudson.model.listeners.ItemListener;
 import hudson.model.listeners.SaveableListener;
 import hudson.slaves.ComputerListener;
 import hudson.slaves.EphemeralNode;
+import hudson.slaves.OfflineCause;
 import io.fabric8.kubernetes.api.model.ContainerStateTerminated;
 import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
@@ -45,6 +46,7 @@ import io.fabric8.kubernetes.client.WatcherException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -59,6 +61,7 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import jenkins.util.Listeners;
 import jenkins.util.Timer;
+import org.apache.commons.lang.mutable.MutableBoolean;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesClientProvider;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesComputer;
@@ -66,6 +69,7 @@ import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
+import org.jvnet.localizer.Localizable;
 
 /**
  * Checks for deleted pods corresponding to {@link KubernetesSlave} and ensures the node is removed from Jenkins too.
@@ -391,7 +395,9 @@ public class Reaper extends ComputerListener {
             if (template != null) {
                 template.getListener().getLogger().printf("Pod %s/%s was just deleted%n", ns, name);
             }
+
             Jenkins.get().removeNode(node);
+            disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_PodDeleted()));
         }
     }
 
@@ -403,23 +409,29 @@ public class Reaper extends ComputerListener {
             if (action != Watcher.Action.MODIFIED) {
                 return;
             }
+
             List<ContainerStatus> terminatedContainers = PodUtils.getTerminatedContainers(pod);
             if (!terminatedContainers.isEmpty()) {
                 String ns = pod.getMetadata().getNamespace();
                 String name = pod.getMetadata().getName();
                 PodTemplate template = node.getTemplateOrNull();
                 TaskListener runListener = template != null ? template.getListener() : TaskListener.NULL;
+                List<String> containers = new ArrayList<>();
                 terminatedContainers.forEach(c -> {
                     ContainerStateTerminated t = c.getState().getTerminated();
-                    LOGGER.info(() -> ns + "/" + name + " Container " + c.getName() + " was just terminated, so removing the corresponding Jenkins agent");
+                    String containerName = c.getName();
+                    containers.add(containerName);
+                    LOGGER.info(() -> ns + "/" + name + " Container " + containerName + " was just terminated, so removing the corresponding Jenkins agent");
                     String reason = t.getReason();
-                    runListener.getLogger().printf("%s/%s Container %s was terminated (Exit Code: %d, Reason: %s)%n", ns, name, c.getName(), t.getExitCode(), reason);
+                    runListener.getLogger().printf("%s/%s Container %s was terminated (Exit Code: %d, Reason: %s)%n", ns, name, containerName, t.getExitCode(), reason);
                     if (reason != null) {
                         terminationReasons.add(reason);
                     }
                 });
-                logLastLinesThenTerminateNode(node, pod, runListener);
+
                 PodUtils.cancelQueueItemFor(pod, "ContainerError");
+                logLastLinesThenTerminateNode(node, pod, runListener);
+                disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_ContainerFailed("ContainerError", containers)));
             }
         }
     }
@@ -431,6 +443,7 @@ public class Reaper extends ComputerListener {
             if (action != Watcher.Action.MODIFIED) {
                 return;
             }
+
             if ("Failed".equals(pod.getStatus().getPhase())) {
                 String ns = pod.getMetadata().getNamespace();
                 String name = pod.getMetadata().getName();
@@ -442,8 +455,17 @@ public class Reaper extends ComputerListener {
                 if (reason != null) {
                     terminationReasons.add(reason);
                 }
+
                 logLastLinesThenTerminateNode(node, pod, runListener);
+                disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_PodFailed(reason, pod.getStatus().getMessage())));
             }
+        }
+    }
+
+    private static void disconnectComputer(KubernetesSlave node, OfflineCause cause) {
+        Computer computer = node.getComputer();
+        if (computer != null) {
+            computer.disconnect(cause);
         }
     }
 
@@ -473,18 +495,22 @@ public class Reaper extends ComputerListener {
                 ContainerStateWaiting waiting = cs.getState().getWaiting();
                 return waiting != null && waiting.getMessage() != null && waiting.getMessage().contains("Back-off pulling image");
             });
-            if (backOffContainers.isEmpty()) {
-                return;
+
+            if (!backOffContainers.isEmpty()) {
+                List<String> images = new ArrayList<>();
+                backOffContainers.forEach(cs -> {
+                    images.add(cs.getImage());
+                    PodTemplate template = node.getTemplateOrNull();
+                    if (template != null) {
+                        template.getListener().error("Unable to pull Docker image \"" + cs.getImage() + "\". Check if image tag name is spelled correctly.");
+                    }
+                });
+
+                terminationReasons.add("ImagePullBackOff");
+                PodUtils.cancelQueueItemFor(pod, "ImagePullBackOff");
+                node.terminate();
+                disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_ImagePullBackoff("ImagePullBackOff", images)));
             }
-            backOffContainers.forEach(cs -> {
-                PodTemplate template = node.getTemplateOrNull();
-                if (template != null) {
-                    template.getListener().error("Unable to pull Docker image \"" + cs.getImage() + "\". Check if image tag name is spelled correctly.");
-                }
-            });
-            terminationReasons.add("ImagePullBackOff");
-            PodUtils.cancelQueueItemFor(pod, "ImagePullBackOff");
-            node.terminate();
         }
     }
 

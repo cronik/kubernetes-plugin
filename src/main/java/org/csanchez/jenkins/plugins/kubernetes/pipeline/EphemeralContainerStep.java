@@ -1,7 +1,12 @@
 package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Extension;
@@ -9,7 +14,7 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.Node;
 import hudson.model.Run;
-import hudson.model.TaskListener ;
+import hudson.model.TaskListener;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils;
 import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
 import org.jenkinsci.plugins.workflow.steps.Step;
