@@ -244,7 +244,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             rcEnvVars = run.getEnvironment(listener);
         }
 
-        decorator = new ContainerExecDecorator();
+        decorator = new EphemeralContainerExecDecorator();
         decorator.setNodeContext(nodeContext);
         decorator.setContainerName(containerName);
         decorator.setEnvironmentExpander(env);
