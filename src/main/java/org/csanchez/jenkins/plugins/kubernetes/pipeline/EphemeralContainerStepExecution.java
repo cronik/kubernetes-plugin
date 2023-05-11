@@ -122,12 +122,24 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         EphemeralContainer ec = new PodTemplateBuilder(pt, slave).createEphemeralContainer(template);
         ec.setTargetContainerName(step.getTargetContainer());
         // Windows containers not yet supported
-        // Override entrypoint with a file monitor script that will exit the container when the step ends
-        // to return resources to the Pod.
-        ec.setCommand(Collections.singletonList("sh"));
-        ec.setArgs(Arrays.asList("-c", "set -e; { while ! test -f /tmp/" + containerName + "-jenkins-step-is-done-monitor ; do sleep 3; done }"));
-        LOGGER.finest(() -> "Adding Ephemeral Container: " + ec);
+        // Our file monitor script that will exit the container when the step ends to return resources to the Pod.
+        List<String> monitorCmd = Arrays.asList("sh", "-c", "set -e; { while ! test -f /tmp/" + containerName + "-jenkins-step-is-done-monitor ; do sleep 3; done }");
+        if (step.getCommand() == null) {
+            // Use default container entrypoint. It is assumed to be able to handle taking an executable as the first
+            // arg. Specifically "sh" so the file monitory and be run.
+            ec.setArgs(monitorCmd);
+        } else if (step.getCommand().isEmpty()) {
+            // if command is empty array it tells us the user wants us to override the entrypoint
+            // the equivalent of `--entrypoint=''` in docker speak.
+            ec.setCommand(monitorCmd);
+        } else {
+            // Use the user supplied entrypoint. Like the default entrypoint it is assumed to handle taking an executable
+            // as the first arg.
+            ec.setCommand(step.getCommand());
+            ec.setArgs(monitorCmd);
+        }
 
+        LOGGER.finest(() -> "Adding Ephemeral Container: " + ec);
         // Display link in the build console to the new container
         TaskListener listener = getContext().get(TaskListener.class);
         String containerUrl = ModelHyperlinkNote.encodeTo("/computer/" + nodeContext.getPodName() + "/container?name=" + containerName, containerName);

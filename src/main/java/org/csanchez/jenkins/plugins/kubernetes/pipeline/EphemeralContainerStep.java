@@ -41,6 +41,9 @@ public class EphemeralContainerStep extends Step implements Serializable {
     private String shell;
 
     @CheckForNull
+    private List<String> command;
+
+    @CheckForNull
     private String runAsUser;
 
     @CheckForNull
@@ -119,6 +122,16 @@ public class EphemeralContainerStep extends Step implements Serializable {
     @DataBoundSetter
     public void setRunAsGroup(@CheckForNull String runAsGroup) {
         this.runAsGroup = runAsGroup;
+    }
+
+    @CheckForNull
+    public List<String> getCommand() {
+        return command;
+    }
+
+    @DataBoundSetter
+    public void setCommand(@CheckForNull List<String> command) {
+        this.command = command;
     }
 
     @Extension
