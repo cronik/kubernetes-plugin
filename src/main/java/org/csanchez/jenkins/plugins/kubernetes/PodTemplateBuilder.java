@@ -49,6 +49,18 @@ import java.util.stream.Collectors;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.Util;
+import io.fabric8.kubernetes.api.model.PodSpecFluent;
+import org.apache.commons.lang.StringUtils;
+import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
+import org.csanchez.jenkins.plugins.kubernetes.pipeline.PodTemplateStepExecution;
+import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecorator;
+import org.csanchez.jenkins.plugins.kubernetes.volumes.HostPathVolume;
+import org.csanchez.jenkins.plugins.kubernetes.volumes.PodVolume;
+import org.csanchez.jenkins.plugins.kubernetes.volumes.ConfigMapVolume;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+
 import hudson.TcpSlaveAgentListener;
 import hudson.Util;
 import hudson.slaves.SlaveComputer;
@@ -181,6 +193,33 @@ public class PodTemplateBuilder {
         }
         String podName = agent.getPodName();
         AgentPodVolumes volumes = computeAgentVolumes(podName);
+        int i = 0;
+        for (final PodVolume volume : template.getVolumes()) {
+            final String volumeName = "volume-" + i;
+            final String mountPath = normalizePath(volume.getMountPath());
+            if (!volumeMounts.containsKey(mountPath)) {
+                VolumeMountBuilder volumeMountBuilder = new VolumeMountBuilder() //
+                        .withMountPath(mountPath).withName(volumeName).withReadOnly(false);
+                
+                if (volume instanceof ConfigMapVolume) {
+                    final ConfigMapVolume configmapVolume = (ConfigMapVolume) volume;
+                    String subPath = configmapVolume.getSubPath();
+                    if (subPath != null) {
+                        volumeMountBuilder = volumeMountBuilder.withSubPath(normalizePath(subPath));
+                    }
+                }
+                if (volume instanceof HostPathVolume) {
+                    final HostPathVolume hostPathVolume = (HostPathVolume) volume;
+                    Boolean readOnly = hostPathVolume.getReadOnly();
+                    volumeMountBuilder = volumeMountBuilder.withReadOnly(readOnly);
+                }
+                volumeMounts.put(mountPath, volumeMountBuilder.build());
+                volumes.put(volumeName, volume.buildVolume(volumeName, podName));
+                i++;
+            }
+        }
+
+        volumes.put(WORKSPACE_VOLUME_NAME, template.getWorkspaceVolume().buildVolume(WORKSPACE_VOLUME_NAME, podName));
 
         Map<String, Container> containers = new HashMap<>();
         // containers from pod template
