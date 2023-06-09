@@ -366,10 +366,15 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
 
         @Override
         public boolean test(Pod pod) {
+            // pod could be null if informer list is empty
+            if (pod == null) {
+                return !running;
+            }
+
             return pod.getStatus()
                     .getEphemeralContainerStatuses()
                     .stream()
-                    .filter(status -> status.getName().equals(containerName))
+                    .filter(status -> StringUtils.equals(status.getName(), containerName))
                     .anyMatch(status -> {
                         onStatus(status);
                         if (running) {

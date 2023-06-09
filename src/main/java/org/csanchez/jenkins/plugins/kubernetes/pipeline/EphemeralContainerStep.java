@@ -69,7 +69,10 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @DataBoundSetter
     public void setEnvVars(List<TemplateEnvVar> envVars) {
-        this.envVars.addAll(envVars);
+        if (envVars != null) {
+            this.envVars.clear();
+            this.envVars.addAll(envVars);
+        }
     }
 
     @Override
