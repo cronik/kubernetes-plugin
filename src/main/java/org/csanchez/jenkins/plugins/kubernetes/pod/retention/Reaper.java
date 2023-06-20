@@ -494,10 +494,7 @@ public class Reaper extends ComputerListener {
                 List<String> images = new ArrayList<>();
                 backOffContainers.forEach(cs -> {
                     images.add(cs.getImage());
-                    PodTemplate template = node.getTemplateOrNull();
-                    if (template != null) {
-                        template.getListener().error("Unable to pull Docker image \"" + cs.getImage() + "\". Check if image tag name is spelled correctly.");
-                    }
+                    node.getRunListener().error("Unable to pull Docker image \"" + cs.getImage() + "\". Check if image tag name is spelled correctly.");
                 });
 
                 terminationReasons.add("ImagePullBackOff");
@@ -505,8 +502,6 @@ public class Reaper extends ComputerListener {
                 node.terminate();
                 disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_ImagePullBackoff("ImagePullBackOff", images)));
             }
-
-            backOffContainers.forEach(cs -> node.getRunListener().error("Unable to pull Docker image \"" + cs.getImage() + "\". Check if image tag name is spelled correctly."));
         }
     }
 
