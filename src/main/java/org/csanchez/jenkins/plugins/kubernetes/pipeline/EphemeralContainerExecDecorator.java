@@ -1,9 +1,9 @@
 package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Launcher;
 import hudson.model.Node;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * EphemeralContainerExecDecorator is a {@link hudson.LauncherDecorator} specifically for containers launched
@@ -32,7 +32,7 @@ public class EphemeralContainerExecDecorator extends ContainerExecDecorator {
      */
     static class EphemeralContainerDecoratedLauncher extends Launcher.DecoratedLauncher {
 
-        public EphemeralContainerDecoratedLauncher(@NotNull Launcher inner) {
+        public EphemeralContainerDecoratedLauncher(@NonNull Launcher inner) {
             super(inner);
         }
     }
