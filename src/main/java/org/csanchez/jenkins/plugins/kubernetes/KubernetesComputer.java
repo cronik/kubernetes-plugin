@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.model.Computer;
@@ -31,6 +32,8 @@ import io.fabric8.kubernetes.client.dsl.PodResource;
 import jenkins.model.Jenkins;
 import org.acegisecurity.Authentication;
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
@@ -42,7 +45,7 @@ import org.kohsuke.stapler.framework.io.LargeText;
 /**
  * @author Carlos Sanchez carlos@apache.org
  */
-public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> {
+public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> implements TrackedItem {
     private static final Logger LOGGER = Logger.getLogger(KubernetesComputer.class.getName());
 
     private boolean launching;
@@ -241,5 +244,16 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> {
         }
 
         return envVars;
+    }
+
+    @CheckForNull
+    @Override
+    public ProvisioningActivity.Id getId() {
+        KubernetesSlave slave = getNode();
+        if (slave != null) {
+            return slave.getId();
+        }
+
+        return null;
     }
 }
