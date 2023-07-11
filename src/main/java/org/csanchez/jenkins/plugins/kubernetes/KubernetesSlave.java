@@ -256,7 +256,18 @@ public class KubernetesSlave extends AbstractCloudSlave implements TrackedItem {
     }
 
     public Optional<Pod> getPod() {
-        return pod == null ? Optional.empty() : Optional.of(pod);
+        if (pod == null) {
+            // if jenkins restarts the transient pod reference may not be available
+            try {
+                Pod p = getKubernetesCloud().connect().pods().withName(getPodName()).get();
+                return Optional.ofNullable(p);
+            } catch (KubernetesAuthException | IOException e) {
+                LOGGER.log(Level.WARNING, e, () -> String.format("Failed to connect to cloud %s to get pod %s", getCloudName(), getPodName()));
+                return Optional.empty();
+            }
+        } else {
+            return Optional.of(pod);
+        }
     }
 
     /**

@@ -46,6 +46,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import javax.swing.text.html.Option;
+
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -498,11 +500,7 @@ public class PodTemplateBuilder {
             throw new IllegalStateException("No KubernetesSlave is set");
         }
 
-        if (!agent.getPod().isPresent()) {
-            throw new IllegalStateException("Agent Pod not assigned");
-        }
-
-        Pod pod = agent.getPod().get();
+        Pod pod = agent.getPod().orElseThrow(() -> new IllegalStateException("Agent Pod not assigned"));
         Map<String, EnvVar> envVarsMap = new HashMap<>();
         if (containerTemplate.getEnvVars() != null) {
             containerTemplate.getEnvVars().forEach(item ->
