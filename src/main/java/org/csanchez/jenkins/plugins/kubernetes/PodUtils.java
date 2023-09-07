@@ -18,6 +18,7 @@ package org.csanchez.jenkins.plugins.kubernetes;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -249,7 +250,7 @@ public final class PodUtils {
     public static String createNameWithRandomSuffix(String name) {
         String suffix = generateRandomSuffix();
         // no spaces
-        name = name.replaceAll("[ _]", "-").toLowerCase();
+        name = name.replaceAll("[ _]", "-").toLowerCase(Locale.getDefault());
         // keep it under 63 chars (62 is used to account for the '-')
         name = name.substring(0, Math.min(name.length(), 62 - suffix.length()));
         return String.join("-", name, suffix);
