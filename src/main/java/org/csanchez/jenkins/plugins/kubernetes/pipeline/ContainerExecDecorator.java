@@ -59,7 +59,6 @@ import io.fabric8.kubernetes.client.dsl.ExecListener;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import org.apache.commons.io.output.TeeOutputStream;
 import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
-import org.csanchez.jenkins.plugins.kubernetes.EphemeralContainerAwarePodOperations;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
@@ -401,7 +400,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         final CountDownLatch finished = new CountDownLatch(1);
                         final AtomicLong startAlive = new AtomicLong();
 
-                        ExecWatch watch = new EphemeralContainerAwarePodOperations(getClient())
+                        ExecWatch watch = getClient().pods()
                             .inNamespace(getNamespace())
                             .withName(getPodName())
                             .inContainer(containerName)

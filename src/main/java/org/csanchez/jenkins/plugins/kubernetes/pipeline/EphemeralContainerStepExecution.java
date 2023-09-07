@@ -35,23 +35,19 @@ import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.EphemeralContainer;
 import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.SecurityContext;
 import io.fabric8.kubernetes.api.model.Status;
-import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.PodResource;
-import io.fabric8.kubernetes.client.dsl.internal.OperationContext;
-import io.fabric8.kubernetes.client.dsl.internal.PodOperationContext;
-import io.fabric8.kubernetes.client.dsl.internal.core.v1.PodOperationsImpl;
 import jenkins.metrics.api.Metrics;
 import jenkins.model.Jenkins;
 
 import org.apache.commons.lang.StringUtils;
 import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
-import org.csanchez.jenkins.plugins.kubernetes.EphemeralContainerAwarePodOperations;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 import org.csanchez.jenkins.plugins.kubernetes.MetricNames;
@@ -157,7 +153,6 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         // Patch the Pod with the new ephemeral container
         KubernetesClient client = nodeContext.connectToCloud();
         PodResource podResource = client.pods().withName(nodeContext.getPodName());
-        PodResource pr = EphemeralPodOperations.forPod(client, slave.getPodName());
         MetricRegistry metrics = Metrics.metricRegistry();
         try {
             // Current implementation of ephemeral containers only allows ephemeral containers to be added
@@ -168,10 +163,11 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             int retries = 0;
             do {
                 try {
-                    pr.edit(pod -> {
-                        pod.getSpec().getEphemeralContainers().add(ec);
-                        return pod;
-                    });
+                    podResource.edit(pod -> new PodBuilder(pod)
+                            .editSpec()
+                            .addToEphemeralContainers(ec)
+                            .endSpec()
+                            .build());
 
                     break; // Success
                 } catch (KubernetesClientException kce) {
@@ -206,8 +202,6 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         LOGGER.fine(() -> "Waiting for Ephemeral Container to start: " + containerName);
         try {
             podResource.waitUntilCondition(new EphemeralContainerRunningCondition(containerName, containerUrl, listener), pt.getSlaveConnectTimeout(), TimeUnit.SECONDS);
-            // TODO remove with client 4.5.0
-            slave.getPod().ifPresent(sp -> sp.getSpec().getEphemeralContainers().add(ec));
             LOGGER.fine(() -> "Ephemeral Container started: " + containerName);
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATED).inc();
         } catch (KubernetesClientException kce) {
@@ -314,9 +308,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         KubernetesClient client = nodeContext.connectToCloud();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PodResource resource = client.pods().withName(nodeContext.getPodName());
-        try (ExecWatch watch = new EphemeralContainerAwarePodOperations(client)
-                .withName(nodeContext.getPodName())
-                .inContainer(containerName)
+        try (ExecWatch ignored = resource.inContainer(containerName)
                 .redirectingInput()
                 .writingOutput(out)
                 .writingError(out)
@@ -421,42 +413,6 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                     taskListener.getLogger().println(logMsg);
                 }
             }
-        }
-
-    }
-
-    /**
-     * Temp hack to enable ephemeral container support with the kubernetes client. Can be removed
-     * when support is added to the client library natively.
-     * <p>
-     * <a href="https://github.com/fabric8io/kubernetes-client/pull/4763">Pending Pull Request</a>
-     */
-    private static class EphemeralPodOperations extends PodOperationsImpl {
-
-        private String podName;
-
-        static PodResource forPod(Client client, String podName) {
-            return new EphemeralPodOperations(client, podName).withName(podName +  "/ephemeralcontainers");
-        }
-
-        EphemeralPodOperations(Client clientContext, String podName) {
-            super(clientContext);
-            this.podName = podName;
-        }
-
-        EphemeralPodOperations(PodOperationContext podOperationContext, OperationContext operationContext, String podName) {
-            super(podOperationContext, operationContext);
-            this.podName = podName;
-        }
-
-        @Override
-        public PodOperationsImpl newInstance(OperationContext context) {
-            return new EphemeralPodOperations(getContext(), context, podName);
-        }
-
-        @Override
-        protected <T> String checkName(T item) {
-            return getName();
         }
 
     }

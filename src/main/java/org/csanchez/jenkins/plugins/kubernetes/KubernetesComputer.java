@@ -149,7 +149,7 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
             KubernetesCloud cloud = slave.getKubernetesCloud();
             KubernetesClient client = cloud.connect();
             String namespace = StringUtils.defaultIfBlank(slave.getNamespace(), client.getNamespace());
-            PodResource resource = new EphemeralContainerAwarePodOperations(client)
+            PodResource resource = client.pods()
                     .inNamespace(namespace)
                     .withName(getName());
 
@@ -180,7 +180,7 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
             }
 
             // Get logs
-            try (LogWatch watch = new EphemeralContainerAwarePodOperations(client)
+            try (LogWatch ignore = client.pods()
                     .inNamespace(namespace)
                     .withName(getName())
                     .inContainer(containerId)

@@ -297,11 +297,16 @@ public class KubernetesSlave extends AbstractCloudSlave implements TrackedItem {
 
     static String getSlaveName(PodTemplate template) {
         String name = template.getName();
-        if (StringUtils.isEmpty(name) || !PodUtils.isValidName(name)) {
+        if (StringUtils.isEmpty(name)) {
             name = DEFAULT_AGENT_PREFIX;
         }
 
-        return PodUtils.createNameWithRandomSuffix(name);
+        String slaveName = PodUtils.createNameWithRandomSuffix(name);
+        if (!PodUtils.isValidName(slaveName)) {
+            slaveName = PodUtils.createNameWithRandomSuffix(DEFAULT_AGENT_PREFIX);
+        }
+
+        return slaveName;
     }
 
     @Override
