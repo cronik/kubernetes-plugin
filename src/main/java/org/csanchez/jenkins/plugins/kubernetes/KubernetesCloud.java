@@ -112,6 +112,7 @@ public class KubernetesCloud extends Cloud {
 
     private String namespace;
     private String jnlpregistry;
+    private boolean restrictedPssSecurityContext = false;
     private boolean webSocket;
     private boolean directConnection = false;
     private String jenkinsUrl;
@@ -153,6 +154,9 @@ public class KubernetesCloud extends Cloud {
      * @param source Source Kubernetes cloud implementation
      * @since 0.13
      */
+    @SuppressFBWarnings(value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR", justification = "Problem raised for calling unmarshal. Ignoring the "
+                                                                                             + "warning cause it leads to too many changes, with "
+                                                                                             + "unclear impact.")
     public KubernetesCloud(@NonNull String name, @NonNull KubernetesCloud source) {
         super(name);
         XStream2 xs = new XStream2();
@@ -282,6 +286,15 @@ public class KubernetesCloud extends Cloud {
     @DataBoundSetter
     public void setJnlpregistry(String jnlpregistry) {
         this.jnlpregistry = Util.fixEmpty(jnlpregistry);
+    }
+
+    public boolean isRestrictedPssSecurityContext() {
+        return restrictedPssSecurityContext;
+    }
+
+    @DataBoundSetter
+    public void setRestrictedPssSecurityContext(boolean restrictedPssSecurityContext) {
+        this.restrictedPssSecurityContext = restrictedPssSecurityContext;
     }
 
     @CheckForNull

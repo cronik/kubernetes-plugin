@@ -1,5 +1,7 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
+import java.util.Locale;
+
 import hudson.model.Label;
 
 public class MetricNames {
@@ -19,7 +21,7 @@ public class MetricNames {
     public static final String EPHEMERAL_CONTAINERS_CREATION_FAILED = PREFIX + ".containers.ephemeral.creation.failed";
 
     public static String metricNameForPodStatus(String status) {
-        String formattedStatus = status == null ? "null" : status.toLowerCase();
+        String formattedStatus = status == null ? "null" : status.toLowerCase(Locale.getDefault());
         return PREFIX + ".pods.launch.status." + formattedStatus;
     }
 

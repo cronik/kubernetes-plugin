@@ -45,6 +45,7 @@ import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.kubernetes.client.WatcherException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -66,7 +67,6 @@ import org.csanchez.jenkins.plugins.kubernetes.KubernetesClientProvider;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesComputer;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
-import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
 import org.jvnet.localizer.Localizable;
@@ -81,7 +81,7 @@ import org.jvnet.localizer.Localizable;
  */
 @Extension
 public class Reaper extends ComputerListener {
-    
+
     private static final Logger LOGGER = Logger.getLogger(Reaper.class.getName());
 
     /**
@@ -109,8 +109,8 @@ public class Reaper extends ComputerListener {
     private final Map<String, CloudPodWatcher> watchers = new ConcurrentHashMap<>();
 
     private final LoadingCache<String, Set<String>> terminationReasons = Caffeine.newBuilder().
-        expireAfterAccess(1, TimeUnit.DAYS).
-        build(k -> new ConcurrentSkipListSet<>());
+            expireAfterAccess(1, TimeUnit.DAYS).
+                                                                                         build(k -> new ConcurrentSkipListSet<>());
 
     @Override
     public void preLaunch(Computer c, TaskListener taskListener) throws IOException, InterruptedException {
@@ -177,7 +177,7 @@ public class Reaper extends ComputerListener {
                     } else {
                         LOGGER.fine(() -> ns + "/" + name + " still seems to exist, OK");
                     }
-                } catch (Exception x) {
+                } catch (KubernetesAuthException | IOException | RuntimeException x) {
                     LOGGER.log(Level.WARNING, x, () -> "failed to do initial reap check for " + ns + "/" + name);
                 }
             }
@@ -200,12 +200,12 @@ public class Reaper extends ComputerListener {
 
             // close any cloud watchers that have been removed
             cloudNames.stream()
-                    .map(this.watchers::get)
-                    .filter(Objects::nonNull)
-                    .forEach(cpw -> {
-                        LOGGER.info(() -> "stopping pod watcher for deleted kubernetes cloud " + cpw.cloudName);
-                        cpw.stop();
-                    });
+                      .map(this.watchers::get)
+                      .filter(Objects::nonNull)
+                      .forEach(cpw -> {
+                          LOGGER.info(() -> "stopping pod watcher for deleted kubernetes cloud " + cpw.cloudName);
+                          cpw.stop();
+                      });
         }
     }
 
@@ -228,7 +228,7 @@ public class Reaper extends ComputerListener {
                     old.stop();
                 }
                 LOGGER.info(() -> "set up watcher on " + kc.getDisplayName());
-            } catch (Exception x) {
+            } catch (KubernetesAuthException | IOException | RuntimeException x) {
                 LOGGER.log(Level.WARNING, x, () -> "failed to set up watcher on " + kc.getDisplayName());
             }
         }
@@ -241,6 +241,10 @@ public class Reaper extends ComputerListener {
      */
     boolean isWatchingCloud(String name) {
         return watchers.get(name) != null;
+    }
+
+    public Map<String, ?> getWatchers() {
+        return watchers;
     }
 
     /**
@@ -256,10 +260,10 @@ public class Reaper extends ComputerListener {
 
     private static Optional<KubernetesSlave> resolveNode(@NonNull Jenkins jenkins, String namespace, String name) {
         return new ArrayList<>(jenkins.getNodes()).stream()
-                .filter(KubernetesSlave.class::isInstance)
-                .map(KubernetesSlave.class::cast)
-                .filter(ks -> Objects.equals(ks.getNamespace(), namespace) && Objects.equals(ks.getPodName(), name))
-                .findFirst();
+                                                  .filter(KubernetesSlave.class::isInstance)
+                                                  .map(KubernetesSlave.class::cast)
+                                                  .filter(ks -> Objects.equals(ks.getNamespace(), namespace) && Objects.equals(ks.getPodName(), name))
+                                                  .findFirst();
     }
 
     /**
@@ -319,7 +323,8 @@ public class Reaper extends ComputerListener {
 
             Listeners.notify(Listener.class, true, listener -> {
                 try {
-                    listener.onEvent(action, optionalNode.get(), pod, terminationReasons.get(optionalNode.get().getNodeName()));
+                    Set<String> terminationReasons = Reaper.this.terminationReasons.get(optionalNode.get().getNodeName());
+                    listener.onEvent(action, optionalNode.get(), pod, terminationReasons != null ? terminationReasons : Collections.emptySet());
                 } catch (Exception x) {
                     LOGGER.log(Level.WARNING, "Listener " + listener + " failed for " + ns + "/" + name, x);
                 }
@@ -332,6 +337,7 @@ public class Reaper extends ComputerListener {
          */
         void stop() {
             if (watch != null) {
+                LOGGER.info("Stopping watch for kubernetes cloud " + cloudName);
                 this.watch.close();
             }
         }
@@ -372,13 +378,15 @@ public class Reaper extends ComputerListener {
      * Listener called when a Kubernetes event related to a Kubernetes agent happens.
      */
     public interface Listener extends ExtensionPoint {
+
         /**
-         *
+         * Handle Pod event.
          * @param action the kind of event that happened to the referred pod
          * @param node The affected node
          * @param pod The affected pod
+         * @param terminationReasons Set of termination reasons
          */
-        void onEvent(@NonNull Watcher.Action action, @NonNull KubernetesSlave node, @NonNull Pod pod, @NonNull Set<String> terminationReaons) throws IOException, InterruptedException;
+        void onEvent(@NonNull Watcher.Action action, @NonNull KubernetesSlave node, @NonNull Pod pod, @NonNull Set<String> terminationReasons) throws IOException, InterruptedException;
     }
 
     @Extension
@@ -410,8 +418,8 @@ public class Reaper extends ComputerListener {
             if (!terminatedContainers.isEmpty()) {
                 String ns = pod.getMetadata().getNamespace();
                 String name = pod.getMetadata().getName();
-                List<String> containers = new ArrayList<>();
                 TaskListener runListener = node.getRunListener();
+                List<String> containers = new ArrayList<>();
                 terminatedContainers.forEach(c -> {
                     ContainerStateTerminated t = c.getState().getTerminated();
                     String containerName = c.getName();
@@ -424,8 +432,8 @@ public class Reaper extends ComputerListener {
                     }
                 });
 
-                PodUtils.cancelQueueItemFor(pod, "ContainerError");
                 logLastLinesThenTerminateNode(node, pod, runListener);
+                PodUtils.cancelQueueItemFor(pod, "ContainerError");
                 disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_ContainerFailed("ContainerError", containers)));
             }
         }
@@ -444,22 +452,16 @@ public class Reaper extends ComputerListener {
                 String name = pod.getMetadata().getName();
                 TaskListener runListener = node.getRunListener();
                 String reason = pod.getStatus().getReason();
-                LOGGER.info(() -> ns + "/" + name + " Pod just failed. Removing the corresponding Jenkins agent. Reason: " + reason + ", Message: " + pod.getStatus().getMessage());
-                runListener.getLogger().printf("%s/%s Pod just failed (Reason: %s, Message: %s)%n", ns, name, reason, pod.getStatus().getMessage());
+                String message = pod.getStatus().getMessage();
+                LOGGER.info(() -> ns + "/" + name + " Pod just failed. Removing the corresponding Jenkins agent. Reason: " + reason + ", Message: " + message);
+                runListener.getLogger().printf("%s/%s Pod just failed (Reason: %s, Message: %s)%n", ns, name, reason, message);
                 if (reason != null) {
                     terminationReasons.add(reason);
                 }
 
                 logLastLinesThenTerminateNode(node, pod, runListener);
-                disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_PodFailed(reason, pod.getStatus().getMessage())));
+                disconnectComputer(node, new PodOfflineCause(Messages._PodOfflineCause_PodFailed(reason, message)));
             }
-        }
-    }
-
-    private static void disconnectComputer(KubernetesSlave node, OfflineCause cause) {
-        Computer computer = node.getComputer();
-        if (computer != null) {
-            computer.disconnect(cause);
         }
     }
 
@@ -473,6 +475,20 @@ public class Reaper extends ComputerListener {
             LOGGER.log(Level.FINE, e, () -> "Unable to get logs after pod failed event");
         } finally {
             node.terminate();
+        }
+    }
+
+    /**
+     * Disconnect computer associated with the given node. Should be called AFTER terminate so the offline cause
+     * takes precedence over the one set by {@link KubernetesSlave#terminate()} (via {@link jenkins.model.Nodes#removeNode(Node)}).
+     * @see Computer#disconnect(OfflineCause)
+     * @param node node to disconnect
+     * @param cause reason for offline
+     */
+    private static void disconnectComputer(KubernetesSlave node, OfflineCause cause) {
+        Computer computer = node.getComputer();
+        if (computer != null) {
+            computer.disconnect(cause);
         }
     }
 

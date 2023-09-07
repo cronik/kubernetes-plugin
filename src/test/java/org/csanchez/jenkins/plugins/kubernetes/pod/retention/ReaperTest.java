@@ -24,10 +24,13 @@
 package org.csanchez.jenkins.plugins.kubernetes.pod.retention;
 
 
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import io.fabric8.kubernetes.client.utils.Utils;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.LinkedList;
@@ -41,6 +44,7 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.model.TaskListener;
 import hudson.slaves.ComputerLauncher;
+import hudson.slaves.OfflineCause;
 import hudson.util.StreamTaskListener;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.Watcher;
@@ -55,6 +59,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExternalResource;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.mockito.ArgumentCaptor;
 
 public class ReaperTest {
 
@@ -449,9 +454,9 @@ public class ReaperTest {
         new Reaper.ReaperShutdownListener().onBeforeShutdown();
 
         // watchers removed
-        assertFalse(r.isWatchingCloud(cloud.name));
-        assertFalse(r.isWatchingCloud(cloud2.name));
-        assertFalse(r.isWatchingCloud(cloud3.name));
+        await().until(() -> r.isWatchingCloud(cloud.name), is(false));
+        await().until(() -> r.isWatchingCloud(cloud2.name), is(false));
+        await().until(() -> r.isWatchingCloud(cloud3.name), is(false));
     }
 
     @Test(timeout = 10_000)
@@ -486,6 +491,9 @@ public class ReaperTest {
         // verify listener got notified
         listener.expectEvent(Watcher.Action.DELETED, node);
 
+        // verify computer disconnected with offline cause
+        verify(node.getComputer()).disconnect(isA(PodOfflineCause.class));
+
         // expect node to be removed
         assertEquals("jenkins nodes", j.jenkins.getNodes().size(), 0);
     }
@@ -508,6 +516,15 @@ public class ReaperTest {
         .always();
         // don't remove pod on activate
         server.expect().withPath("/api/v1/namespaces/foo/pods/node-123").andReturn(200, node123).once();
+        // Get logs
+        server.expect()
+                .withPath("/api/v1/namespaces/foo/pods?fieldSelector=" + Utils.toUrlEncoded("metadata.name=node-123"))
+                .andReturn(200, new PodListBuilder().withNewMetadata().endMetadata().withItems(node123).build())
+                .always();
+        server.expect()
+                .withPath("/api/v1/namespaces/foo/pods/node-123/log?pretty=false&tailLines=30")
+                .andReturn(200, "some log")
+                .always();
 
         // activate reaper
         Reaper r = Reaper.getInstance();
@@ -516,16 +533,13 @@ public class ReaperTest {
         // verify node is still registered
         assertEquals("jenkins nodes", j.jenkins.getNodes().size(), 1);
 
-        // wait for the delete event to be processed
-        waitForKubeClientRequests(6)
-                .assertRequestCountAtLeast(watchPodsPath, 3);
-
         // verify listener got notified
-        listener.waitForEvents()
-                .expectEvent(Watcher.Action.MODIFIED, node);
+        listener.waitForEvents().expectEvent(Watcher.Action.MODIFIED, node);
 
         // expect node to be terminated
         verify(node, atLeastOnce()).terminate();
+        // verify computer disconnected with offline cause
+        verify(node.getComputer(), atLeastOnce()).disconnect(isA(PodOfflineCause.class));
         // verify node is still registered (will be removed when pod deleted)
         assertEquals("jenkins nodes", j.jenkins.getNodes().size(), 1);
     }
@@ -563,6 +577,8 @@ public class ReaperTest {
 
         // expect node to be terminated
         verify(node, atLeastOnce()).terminate();
+        // verify computer disconnected with offline cause
+        verify(node.getComputer()).disconnect(isA(PodOfflineCause.class));
         // verify node is still registered (will be removed when pod deleted)
         assertEquals("jenkins nodes", j.jenkins.getNodes().size(), 1);
     }
@@ -602,42 +618,52 @@ public class ReaperTest {
 
         // expect node to be terminated
         verify(node, atLeastOnce()).terminate();
+        // verify computer disconnected with offline cause
+        verify(node.getComputer(), atLeastOnce()).disconnect(isA(PodOfflineCause.class));
         // verify node is still registered (will be removed when pod deleted)
         assertEquals("jenkins nodes", j.jenkins.getNodes().size(), 1);
     }
 
     private Pod withContainerImagePullBackoff(Pod pod) {
-        ContainerStatus status = new ContainerStatus();
-        ContainerState state = new ContainerState();
-        ContainerStateWaiting waiting = new ContainerStateWaiting();
-        waiting.setMessage("something Back-off pulling image something");
-        state.setWaiting(waiting);
-        status.setState(state);
+        ContainerStatus status = new ContainerStatusBuilder()
+                .withNewState()
+                .withNewWaiting("something Back-off pulling image something", "ImagePullBackoff")
+                .endState()
+                .build();
         pod.getStatus().getContainerStatuses().add(status);
         return pod;
     }
 
     private Pod withContainerStatusTerminated(Pod pod) {
-        ContainerStatus status = new ContainerStatus();
-        ContainerState state = new ContainerState();
-        ContainerStateTerminated terminated = new ContainerStateTerminated();
-        terminated.setExitCode(123);
-        terminated.setReason("because");
-        state.setTerminated(terminated);
-        status.setState(state);
-        pod.getStatus().getContainerStatuses().add(status);
+        PodStatus podStatus = pod.getStatus();
+        podStatus.getConditions().add(new PodConditionBuilder()
+                .withType("Ready")
+                .withStatus("True")
+                .build());
+        ContainerStatus status = new ContainerStatusBuilder()
+                .withNewState()
+                .withNewTerminated()
+                .withExitCode(123)
+                .withReason("because")
+                .withContainerID("foo")
+                .endTerminated()
+                .endState()
+                .build();
+        podStatus.getContainerStatuses().add(status);
         return pod;
     }
 
     private Pod createPod(KubernetesSlave node) {
-        Pod pod = new Pod();
-        ObjectMeta meta = new ObjectMeta();
-        meta.setNamespace(node.getNamespace());
-        meta.setName(node.getPodName());
-        pod.setMetadata(meta);
-        pod.setSpec(new PodSpec());
-        pod.setStatus(new PodStatus());
-        return pod;
+        return new PodBuilder()
+                .withNewMetadata()
+                .withName(node.getPodName())
+                .withNamespace(node.getNamespace())
+                .endMetadata()
+                .withNewSpec()
+                .endSpec()
+                .withNewStatus()
+                .endStatus()
+                .build();
     }
 
     private KubernetesSlave addNode(KubernetesCloud cld, String podName, String nodeName) throws IOException {
@@ -653,6 +679,8 @@ public class ReaperTest {
         when(node.getRunListener()).thenReturn(StreamTaskListener.fromStderr());
         ComputerLauncher launcher = mock(ComputerLauncher.class);
         when(node.getLauncher()).thenReturn(launcher);
+        KubernetesComputer computer = mock(KubernetesComputer.class);
+        when(node.getComputer()).thenReturn(computer);
         j.jenkins.addNode(node);
         return node;
     }
@@ -729,7 +757,7 @@ public class ReaperTest {
         }
 
         CapturedRequests assertRequestCountAtLeast(String path, long count) {
-            assertThat(path + " count at least", countByPath.getOrDefault(path, 0L), Matchers.greaterThanOrEqualTo(count));
+            assertThat(path + " count at least", countByPath.getOrDefault(path, 0L), greaterThanOrEqualTo(count));
             return this;
         }
     }
@@ -811,22 +839,22 @@ public class ReaperTest {
     }
 
     private static WatchEvent outdatedEvent() {
-        return new WatchEventBuilder().withType(Watcher.Action.ERROR.name())
-                .withStatusObject(
-                        new StatusBuilder().withCode(HttpURLConnection.HTTP_GONE)
-                                .withMessage(
-                                        "410: The event in requested index is outdated and cleared (the requested history has been cleared [3/1]) [2]")
-                                .build())
+        return new WatchEventBuilder()
+                .withType(Watcher.Action.ERROR.name())
+                .withNewStatusObject()
+                .withCode(HttpURLConnection.HTTP_GONE)
+                .withMessage("410: The event in requested index is outdated and cleared (the requested history has been cleared [3/1]) [2]")
+                .endStatusObject()
                 .build();
     }
 
     private static WatchEvent errorEvent() {
-        return new WatchEventBuilder().withType(Watcher.Action.ERROR.name())
-                .withStatusObject(
-                        new StatusBuilder().withCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
-                                .withMessage(
-                                        "500: Internal error")
-                                .build())
+        return new WatchEventBuilder()
+                .withType(Watcher.Action.ERROR.name())
+                .withNewStatusObject()
+                .withCode(HttpURLConnection.HTTP_INTERNAL_ERROR)
+                .withMessage("500: Internal error")
+                .endStatusObject()
                 .build();
     }
 }
