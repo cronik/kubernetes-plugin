@@ -560,7 +560,7 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
 
                     LOGGER.fine(() -> "Created process inside pod: [" + getPodName() + "], container: ["
                             + containerName + "]" + "[" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startMethod) + " ms]");
-                    ContainerExecProc proc = new ContainerExecProc(watch, alive, finished, stdin);
+                    ContainerExecProc proc = new ContainerExecProc(watch, alive, finished, stdin, printStream);
                     closables.add(proc);
                     return proc;
                 } catch (InterruptedException ie) {
