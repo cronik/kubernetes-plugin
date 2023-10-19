@@ -163,7 +163,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             int retries = 0;
             do {
                 try {
-                    podResource.edit(pod -> new PodBuilder(pod)
+                    podResource.ephemeralContainers().edit(pod -> new PodBuilder(pod)
                             .editSpec()
                             .addToEphemeralContainers(ec)
                             .endSpec()
