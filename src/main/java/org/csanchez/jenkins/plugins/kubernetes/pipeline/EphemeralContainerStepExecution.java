@@ -174,7 +174,8 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                     Status status = kce.getStatus();
                     if (retries < maxRetries
                             && status != null
-                            && StringUtils.contains(status.getMessage(), "Forbidden: existing ephemeral containers")) {
+                            && (StringUtils.contains(status.getMessage(), "Forbidden: existing ephemeral containers")
+                                || StringUtils.equals(status.getReason(), "Conflict"))) {
                         retries++;
                         LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + maxRetries + "): " + kce.getMessage());
                     } else {
@@ -189,7 +190,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             Status status = kce.getStatus();
             if (status != null) {
                 if (status.getMessage() != null) {
-                    message += status.getMessage();
+                    message += " " + status.getMessage();
                 }
 
                 message += " (" + status.getReason() + ")";
