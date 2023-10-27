@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -68,6 +69,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
     private static final Logger LOGGER = Logger.getLogger(EphemeralContainerStepExecution.class.getName());
 
     private static final int PATCH_MAX_RETRY = Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchMaxRetry", 10);
+    private static final int PATCH_RETRY_MAX_WAIT = Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchRetryMaxWaitSecs", 2);
 
     @SuppressFBWarnings(value = "SE_TRANSIENT_FIELD_NOT_RESTORED", justification = "not needed on deserialization")
     private final transient EphemeralContainerStep step;
@@ -149,7 +151,12 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             }
 
             // Add link to the container logs
-            listener.getLogger().println("Starting ephemeral container " + containerUrl + " with image " + ec.getImage() + runningAs);
+            try {
+                listener.getLogger().println("Starting ephemeral container " + containerUrl + " with image " + ec.getImage() + runningAs);
+            } catch (NullPointerException ignore) {
+                // can't trust all plugins manipulating the console log to handle multi-threading correctly
+                // (i.e. splunk-devops PipelineConsoleDecoder is not thread safe)
+            }
         }
 
         // Patch the Pod with the new ephemeral container
@@ -177,12 +184,22 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                             && status != null
                             && StringUtils.equals(status.getReason(), "Conflict")) {
                         retries++;
-                        LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
 
+                        // With large parallel operations the max retry may still get hit trying to provision
+                        // ephemeral container patch updates. This introduces a small amount of random wait
+                        // to distribute the patch updates to helm reduce the changes of a conflict.
+                        long waitTime = 0;
                         if (status.getDetails() != null && status.getDetails().getRetryAfterSeconds() != null) {
-                            Integer secs = status.getDetails().getRetryAfterSeconds();
-                            LOGGER.info("Waiting " + secs + " to before retrying adding ephemeral container " + containerName);
-                            Thread.sleep(TimeUnit.SECONDS.toMillis(secs));
+                            waitTime = TimeUnit.SECONDS.toMillis(status.getDetails().getRetryAfterSeconds());
+                        } else if (PATCH_RETRY_MAX_WAIT > 0) {
+                            waitTime = ThreadLocalRandom.current().nextLong(TimeUnit.SECONDS.toMillis(PATCH_RETRY_MAX_WAIT));
+                        }
+
+                        if (waitTime > 0) {
+                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again in " + waitTime + "ms (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
+                            Thread.sleep(waitTime);
+                        } else {
+                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
                         }
                     } else {
                         throw kce;
@@ -191,7 +208,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             } while (true);
         } catch (KubernetesClientException kce) {
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATION_FAILED).inc();
-            LOGGER.log(Level.WARNING, "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName() + " on cloud " + cloud.name, kce);
+            LOGGER.log(Level.WARNING, "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName() + " on cloud " + cloud.name + " after " + retries + " retries.", kce);
             String message = "Ephemeral container could not be added.";
             Status status = kce.getStatus();
             if (status != null) {
