@@ -67,6 +67,8 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
 
     private static final Logger LOGGER = Logger.getLogger(EphemeralContainerStepExecution.class.getName());
 
+    private static final int PATCH_MAX_RETRY = Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchMaxRetry", 10);
+
     @SuppressFBWarnings(value = "SE_TRANSIENT_FIELD_NOT_RESTORED", justification = "not needed on deserialization")
     private final transient EphemeralContainerStep step;
 
@@ -154,13 +156,12 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         KubernetesClient client = nodeContext.connectToCloud();
         PodResource podResource = client.pods().withName(nodeContext.getPodName());
         MetricRegistry metrics = Metrics.metricRegistry();
+        // Current implementation of ephemeral containers only allows ephemeral containers to be added
+        // so patching may fail if different threads attempt to add using the same resource version
+        // which would effectively act as a "delete" when the second patch was processed. If this
+        // situation is detected the patch will be retried.
+        int retries = 0;
         try {
-            // Current implementation of ephemeral containers only allows ephemeral containers to be added
-            // so patching may fail if different threads attempt to add using the same resource version
-            // which would effectively act as a "delete" when the second patch was processed. If this
-            // situation is detected the patch will be retried.
-            int maxRetries = 3;
-            int retries = 0;
             do {
                 try {
                     podResource.ephemeralContainers().edit(pod -> new PodBuilder(pod)
@@ -172,12 +173,17 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                     break; // Success
                 } catch (KubernetesClientException kce) {
                     Status status = kce.getStatus();
-                    if (retries < maxRetries
+                    if (retries < PATCH_MAX_RETRY
                             && status != null
-                            && (StringUtils.contains(status.getMessage(), "Forbidden: existing ephemeral containers")
-                                || StringUtils.equals(status.getReason(), "Conflict"))) {
+                            && StringUtils.equals(status.getReason(), "Conflict")) {
                         retries++;
-                        LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + maxRetries + "): " + kce.getMessage());
+                        LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
+
+                        if (status.getDetails() != null && status.getDetails().getRetryAfterSeconds() != null) {
+                            Integer secs = status.getDetails().getRetryAfterSeconds();
+                            LOGGER.info("Waiting " + secs + " to before retrying adding ephemeral container " + containerName);
+                            Thread.sleep(TimeUnit.SECONDS.toMillis(secs));
+                        }
                     } else {
                         throw kce;
                     }
@@ -194,6 +200,10 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                 }
 
                 message += " (" + status.getReason() + ")";
+            }
+
+            if (retries == PATCH_MAX_RETRY) {
+                message += ". Reached max retry limit.";
             }
 
             throw new AbortException(message);
