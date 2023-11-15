@@ -1,5 +1,6 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
+import javax.servlet.ServletException;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -37,18 +38,24 @@ import org.csanchez.jenkins.plugins.kubernetes.volumes.workspace.WorkspaceVolume
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
-
+import org.kohsuke.stapler.HttpRedirect;
+import org.kohsuke.stapler.HttpResponse;
+import org.kohsuke.stapler.StaplerRequest;
+import org.kohsuke.stapler.verb.POST;
 import hudson.Extension;
 import hudson.Util;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProperty;
+import hudson.util.FormApply;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import java.io.StringReader;
 import jenkins.model.Jenkins;
+import net.sf.json.JSONObject;
 
 /**
  * Kubernetes Pod Template
@@ -629,6 +636,43 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         if (envVars != null) {
             this.envVars.addAll(envVars);
         }
+    }
+
+    /**
+     * Deletes the template.
+     */
+    @POST
+    public HttpResponse doDoDelete(@AncestorInPath PodTemplateGroup owner) throws IOException {
+        Jenkins j = Jenkins.get();
+        j.checkPermission(Jenkins.ADMINISTER);
+        if (owner == null) {
+            throw new IllegalStateException("Cloud could not be found");
+        }
+        owner.removeTemplate(this);
+        j.save();
+        // take the user back.
+        return new HttpRedirect(owner.getPodTemplateGroupUrl());
+    }
+
+    @POST
+    public HttpResponse doConfigSubmit(StaplerRequest req, @AncestorInPath PodTemplateGroup owner) throws IOException, ServletException, Descriptor.FormException {
+        Jenkins j = Jenkins.get();
+        j.checkPermission(Jenkins.ADMINISTER);
+        if (owner == null) {
+            throw new IllegalStateException("Cloud could not be found");
+        }
+        PodTemplate newTemplate = reconfigure(req, req.getSubmittedForm());
+        owner.replaceTemplate(this, newTemplate);
+        j.save();
+        // take the user back.
+        return FormApply.success(owner.getPodTemplateGroupUrl());
+    }
+
+    private PodTemplate reconfigure(@NonNull final StaplerRequest req, JSONObject form) throws Descriptor.FormException {
+        if (form == null) {
+            return null;
+        }
+        return getDescriptor().newInstance(req, form);
     }
 
     @DataBoundSetter
