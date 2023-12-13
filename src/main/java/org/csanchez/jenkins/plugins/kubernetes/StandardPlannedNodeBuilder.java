@@ -21,8 +21,7 @@ public class StandardPlannedNodeBuilder extends PlannedNodeBuilder {
         CompletableFuture<Node> f;
         ProvisioningActivity.Id id = null;
         try {
-            KubernetesSlave agent = KubernetesSlave
-                    .builder()
+            KubernetesSlave agent = KubernetesSlave.builder()
                     .podTemplate(t.isUnwrapped() ? t : cloud.getUnwrappedTemplate(t))
                     .cloud(cloud)
                     .build();

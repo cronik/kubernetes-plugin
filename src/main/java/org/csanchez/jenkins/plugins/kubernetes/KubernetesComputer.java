@@ -29,6 +29,13 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.dsl.PodResource;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import org.acegisecurity.Authentication;
 import org.apache.commons.lang.StringUtils;
@@ -81,13 +88,13 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
 
     @Exported
     public List<Container> getContainers() throws KubernetesAuthException, IOException {
-        if(!Jenkins.get().hasPermission(Computer.EXTENDED_READ)) {
+        if (!Jenkins.get().hasPermission(Computer.EXTENDED_READ)) {
             LOGGER.log(Level.FINE, " Computer {0} getContainers, lack of admin permission, returning empty list", this);
             return Collections.emptyList();
         }
 
         KubernetesSlave slave = getNode();
-        if(slave == null) {
+        if (slave == null) {
             return Collections.emptyList();
         }
 
@@ -106,20 +113,20 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
 
     @Exported
     public List<Event> getPodEvents() throws KubernetesAuthException, IOException {
-        if(!Jenkins.get().hasPermission(Computer.EXTENDED_READ)) {
+        if (!Jenkins.get().hasPermission(Computer.EXTENDED_READ)) {
             LOGGER.log(Level.FINE, " Computer {0} getPodEvents, lack of admin permission, returning empty list", this);
             return Collections.emptyList();
         }
 
         KubernetesSlave slave = getNode();
-        if(slave != null) {
+        if (slave != null) {
             KubernetesCloud cloud = slave.getKubernetesCloud();
             KubernetesClient client = cloud.connect();
 
             String namespace = StringUtils.defaultIfBlank(slave.getNamespace(), client.getNamespace());
 
             Pod pod = client.pods().inNamespace(namespace).withName(getName()).get();
-            if(pod != null) {
+            if (pod != null) {
                 ObjectMeta podMeta = pod.getMetadata();
                 String podNamespace = podMeta.getNamespace();
 
@@ -128,8 +135,12 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
                 fields.put("involvedObject.name", podMeta.getName());
                 fields.put("involvedObject.namespace", podNamespace);
 
-                EventList eventList = client.v1().events().inNamespace(podNamespace).withFields(fields).list();
-                if(eventList != null) {
+                EventList eventList = client.v1()
+                        .events()
+                        .inNamespace(podNamespace)
+                        .withFields(fields)
+                        .list();
+                if (eventList != null) {
                     return eventList.getItems();
                 }
             }
@@ -138,8 +149,8 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
         return Collections.emptyList();
     }
 
-    public void doContainerLog(@QueryParameter String containerId,
-                               StaplerRequest req, StaplerResponse rsp) throws KubernetesAuthException, IOException {
+    public void doContainerLog(@QueryParameter String containerId, StaplerRequest req, StaplerResponse rsp)
+            throws KubernetesAuthException, IOException {
         Jenkins.get().checkPermission(Computer.EXTENDED_READ);
 
         ByteBuffer outputStream = new ByteBuffer();
@@ -224,9 +235,8 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
 
         @Override
         public boolean hasPermission(Authentication a, Permission permission) {
-            return permission == Computer.CONFIGURE ? false : base.hasPermission(a,permission);
+            return permission == Computer.CONFIGURE ? false : base.hasPermission(a, permission);
         }
-
     }
 
     public void setLaunching(boolean launching) {
