@@ -17,8 +17,8 @@ import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 public class EphemeralContainerExecDecorator extends ContainerExecDecorator {
     @Override
     public Launcher decorate(final Launcher launcher, final Node node) {
-        //Allows other nodes to be provisioned inside the container clause
-        //If the node is not a KubernetesSlave return the original launcher
+        // Allows other nodes to be provisioned inside the container clause
+        // If the node is not a KubernetesSlave return the original launcher
         if (node != null && !(node instanceof KubernetesSlave)) {
             return launcher;
         }

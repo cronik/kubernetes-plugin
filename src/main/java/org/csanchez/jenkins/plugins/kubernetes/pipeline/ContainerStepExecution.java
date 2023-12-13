@@ -12,13 +12,11 @@ import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.NodePropertyDescriptor;
 import hudson.util.DescribableList;
-import java.io.Closeable;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
-import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
@@ -81,7 +79,7 @@ public class ContainerStepExecution extends StepExecution {
                 .newBodyInvoker()
                 .withContexts(
                         BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), decorator), env)
-                .withCallback(new ContainerExecCallback(decorator))
+                .withCallback(new CloseableExecCallback(decorator))
                 .start();
         return false;
     }
@@ -91,5 +89,4 @@ public class ContainerStepExecution extends StepExecution {
         LOGGER.log(Level.FINE, "Stopping container step.");
         closeQuietly(getContext(), decorator);
     }
-
 }

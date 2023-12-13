@@ -2,20 +2,6 @@ package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
 import static org.csanchez.jenkins.plugins.kubernetes.pipeline.Resources.closeQuietly;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import com.codahale.metrics.MetricRegistry;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -31,7 +17,6 @@ import hudson.slaves.EnvironmentVariablesNodeProperty;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.NodePropertyDescriptor;
 import hudson.util.DescribableList;
-
 import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.EphemeralContainer;
@@ -44,9 +29,21 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.PodResource;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jenkins.metrics.api.Metrics;
 import jenkins.model.Jenkins;
-
 import org.apache.commons.lang.StringUtils;
 import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
@@ -61,15 +58,16 @@ import org.jenkinsci.plugins.workflow.steps.EnvironmentExpander;
 import org.jenkinsci.plugins.workflow.steps.GeneralNonBlockingStepExecution;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 
-
 public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecution {
 
     private static final long serialVersionUID = 7634132798345235774L;
 
     private static final Logger LOGGER = Logger.getLogger(EphemeralContainerStepExecution.class.getName());
 
-    private static final int PATCH_MAX_RETRY = Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchMaxRetry", 10);
-    private static final int PATCH_RETRY_MAX_WAIT = Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchRetryMaxWaitSecs", 2);
+    private static final int PATCH_MAX_RETRY =
+            Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchMaxRetry", 10);
+    private static final int PATCH_RETRY_MAX_WAIT =
+            Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchRetryMaxWaitSecs", 2);
 
     @SuppressFBWarnings(value = "SE_TRANSIENT_FIELD_NOT_RESTORED", justification = "not needed on deserialization")
     private final transient EphemeralContainerStep step;
@@ -123,7 +121,11 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         ec.setTargetContainerName(step.getTargetContainer());
         // Windows containers not yet supported
         // Our file monitor script that will exit the container when the step ends to return resources to the Pod.
-        List<String> monitorCmd = Arrays.asList("sh", "-c", "set -e; { while ! test -f /tmp/" + containerName + "-jenkins-step-is-done-monitor ; do sleep 3; done }");
+        List<String> monitorCmd = Arrays.asList(
+                "sh",
+                "-c",
+                "set -e; { while ! test -f /tmp/" + containerName
+                        + "-jenkins-step-is-done-monitor ; do sleep 3; done }");
         if (step.getCommand() == null) {
             // Use default container entrypoint. It is assumed to be able to handle taking an executable as the first
             // arg. Specifically "sh" so the file monitory and be run.
@@ -133,7 +135,8 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             // the equivalent of `--entrypoint=''` in docker speak.
             ec.setCommand(monitorCmd);
         } else {
-            // Use the user supplied entrypoint. Like the default entrypoint it is assumed to handle taking an executable
+            // Use the user supplied entrypoint. Like the default entrypoint it is assumed to handle taking an
+            // executable
             // as the first arg.
             ec.setCommand(step.getCommand());
             ec.setArgs(monitorCmd);
@@ -142,7 +145,8 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         LOGGER.finest(() -> "Adding Ephemeral Container: " + ec);
         // Display link in the build console to the new container
         TaskListener listener = getContext().get(TaskListener.class);
-        String containerUrl = ModelHyperlinkNote.encodeTo("/computer/" + nodeContext.getPodName() + "/container?name=" + containerName, containerName);
+        String containerUrl = ModelHyperlinkNote.encodeTo(
+                "/computer/" + nodeContext.getPodName() + "/container?name=" + containerName, containerName);
         if (listener != null) {
             String runningAs = "";
             SecurityContext sc = ec.getSecurityContext();
@@ -152,7 +156,9 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
 
             // Add link to the container logs
             try {
-                listener.getLogger().println("Starting ephemeral container " + containerUrl + " with image " + ec.getImage() + runningAs);
+                listener.getLogger()
+                        .println("Starting ephemeral container " + containerUrl + " with image " + ec.getImage()
+                                + runningAs);
             } catch (NullPointerException ignore) {
                 // can't trust all plugins manipulating the console log to handle multi-threading correctly
                 // (i.e. splunk-devops PipelineConsoleDecoder is not thread safe)
@@ -190,16 +196,21 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                         // to distribute the patch updates to helm reduce the changes of a conflict.
                         long waitTime = 0;
                         if (status.getDetails() != null && status.getDetails().getRetryAfterSeconds() != null) {
-                            waitTime = TimeUnit.SECONDS.toMillis(status.getDetails().getRetryAfterSeconds());
+                            waitTime = TimeUnit.SECONDS.toMillis(
+                                    status.getDetails().getRetryAfterSeconds());
                         } else if (PATCH_RETRY_MAX_WAIT > 0) {
-                            waitTime = ThreadLocalRandom.current().nextLong(TimeUnit.SECONDS.toMillis(PATCH_RETRY_MAX_WAIT));
+                            waitTime = ThreadLocalRandom.current()
+                                    .nextLong(TimeUnit.SECONDS.toMillis(PATCH_RETRY_MAX_WAIT));
                         }
 
                         if (waitTime > 0) {
-                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again in " + waitTime + "ms (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
+                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again in "
+                                    + waitTime + "ms (" + retries + " of " + PATCH_MAX_RETRY + "): "
+                                    + kce.getMessage());
                             Thread.sleep(waitTime);
                         } else {
-                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again (" + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
+                            LOGGER.info("Ephemeral container patch failed due to optimistic locking, trying again ("
+                                    + retries + " of " + PATCH_MAX_RETRY + "): " + kce.getMessage());
                         }
                     } else {
                         throw kce;
@@ -208,7 +219,11 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             } while (true);
         } catch (KubernetesClientException kce) {
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATION_FAILED).inc();
-            LOGGER.log(Level.WARNING, "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName() + " on cloud " + cloud.name + " after " + retries + " retries.", kce);
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to add ephemeral container " + containerName + " to pod " + slave.getPodName()
+                            + " on cloud " + cloud.name + " after " + retries + " retries.",
+                    kce);
             String message = "Ephemeral container could not be added.";
             Status status = kce.getStatus();
             if (status != null) {
@@ -229,7 +244,10 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         // Wait until ephemeral container has started
         LOGGER.fine(() -> "Waiting for Ephemeral Container to start: " + containerName);
         try {
-            podResource.waitUntilCondition(new EphemeralContainerRunningCondition(containerName, containerUrl, listener), pt.getSlaveConnectTimeout(), TimeUnit.SECONDS);
+            podResource.waitUntilCondition(
+                    new EphemeralContainerRunningCondition(containerName, containerUrl, listener),
+                    pt.getSlaveConnectTimeout(),
+                    TimeUnit.SECONDS);
             LOGGER.fine(() -> "Ephemeral Container started: " + containerName);
             metrics.counter(MetricNames.EPHEMERAL_CONTAINERS_CREATED).inc();
         } catch (KubernetesClientException kce) {
@@ -244,30 +262,35 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                     status = "failed to get status";
                 }
 
-                throw new AbortException("Ephemeral container failed to start after " + pt.getSlaveConnectTimeout() + " seconds: " + status);
+                throw new AbortException("Ephemeral container failed to start after " + pt.getSlaveConnectTimeout()
+                        + " seconds: " + status);
             } else {
                 Throwable cause = kce.getCause();
                 if (cause instanceof InterruptedException) {
                     LOGGER.log(Level.FINEST, "Ephemeral container step interrupted", kce);
                     return;
                 } else {
-                    LOGGER.log(Level.FINEST, "Ephemeral container failed to start due to kubernetes client exception", kce);
-                    throw new AbortException("Ephemeral container " + containerName + " failed to start: " + kce.getMessage());
+                    LOGGER.log(
+                            Level.FINEST,
+                            "Ephemeral container failed to start due to kubernetes client exception",
+                            kce);
+                    throw new AbortException(
+                            "Ephemeral container " + containerName + " failed to start: " + kce.getMessage());
                 }
             }
         }
 
         EnvironmentExpander env = EnvironmentExpander.merge(
                 getContext().get(EnvironmentExpander.class),
-                EnvironmentExpander.constant(Collections.singletonMap("POD_CONTAINER", containerName))
-        );
+                EnvironmentExpander.constant(Collections.singletonMap("POD_CONTAINER", containerName)));
 
         EnvVars globalVars = null;
         Jenkins instance = Jenkins.get();
 
-        DescribableList<NodeProperty<?>, NodePropertyDescriptor> globalNodeProperties = instance.getGlobalNodeProperties();
-        List<EnvironmentVariablesNodeProperty> envVarsNodePropertyList = globalNodeProperties
-                .getAll(EnvironmentVariablesNodeProperty.class);
+        DescribableList<NodeProperty<?>, NodePropertyDescriptor> globalNodeProperties =
+                instance.getGlobalNodeProperties();
+        List<EnvironmentVariablesNodeProperty> envVarsNodePropertyList =
+                globalNodeProperties.getAll(EnvironmentVariablesNodeProperty.class);
         if (envVarsNodePropertyList != null && envVarsNodePropertyList.size() != 0) {
             globalVars = envVarsNodePropertyList.get(0).getEnvVars();
         }
@@ -285,11 +308,10 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         decorator.setGlobalVars(globalVars);
         decorator.setRunContextEnvVars(rcEnvVars);
         decorator.setShell(step.getShell());
-        getContext().newBodyInvoker()
+        getContext()
+                .newBodyInvoker()
                 .withContexts(
-                        BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), decorator),
-                        env
-                )
+                        BodyInvoker.mergeLauncherDecorators(getContext().get(LauncherDecorator.class), decorator), env)
                 .withCallback(new CloseableExecCallback(decorator))
                 .withCallback(new TerminateEphemeralContainerExecCallback(containerName))
                 .start();
@@ -342,16 +364,17 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                 .writingError(out)
                 .withTTY()
                 .exec("touch", "/tmp/" + containerName + "-jenkins-step-is-done-monitor")) {
-            resource.waitUntilCondition(new EphemeralContainerStatusCondition(containerName, false), 10, TimeUnit.SECONDS);
+            resource.waitUntilCondition(
+                    new EphemeralContainerStatusCondition(containerName, false), 10, TimeUnit.SECONDS);
             LOGGER.finest(() -> "ephemeral container stopped: " + containerName);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "failed to terminate ephemeral container: " + containerName, ex);
         }
 
-
         LOGGER.finest(() -> {
             try {
-                ContainerStatus status = PodUtils.getContainerStatus(resource.get(), containerName).orElse(null);
+                ContainerStatus status = PodUtils.getContainerStatus(resource.get(), containerName)
+                        .orElse(null);
                 return "Ephemeral container status after step: " + containerName + " -> " + status;
             } catch (KubernetesClientException ignored) {
                 return "Failed to get container status after step";
@@ -372,7 +395,6 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
         public void finished(StepContext context) throws Exception {
             terminateEphemeralContainer(context, containerName);
         }
-
     }
 
     private static class EphemeralContainerStatusCondition implements Predicate<Pod> {
@@ -391,9 +413,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                 return !running;
             }
 
-            return pod.getStatus()
-                    .getEphemeralContainerStatuses()
-                    .stream()
+            return pod.getStatus().getEphemeralContainerStatuses().stream()
                     .filter(status -> StringUtils.equals(status.getName(), containerName))
                     .anyMatch(status -> {
                         onStatus(status);
@@ -405,19 +425,21 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                     });
         }
 
-        protected void onStatus(ContainerStatus status) {
-        }
-
+        protected void onStatus(ContainerStatus status) {}
     }
 
     private static class EphemeralContainerRunningCondition extends EphemeralContainerStatusCondition {
 
-        private static final Set<String> IGNORE_REASONS = new HashSet<>(Arrays.asList("ContainerCreating", "PodInitializing"));
+        private static final Set<String> IGNORE_REASONS =
+                new HashSet<>(Arrays.asList("ContainerCreating", "PodInitializing"));
+
         @CheckForNull
         private final TaskListener taskListener;
+
         private final String containerUrl;
 
-        EphemeralContainerRunningCondition(String containerName, String containerUrl, @CheckForNull TaskListener listener) {
+        EphemeralContainerRunningCondition(
+                String containerName, String containerUrl, @CheckForNull TaskListener listener) {
             super(containerName, true);
             this.containerUrl = containerUrl;
             this.taskListener = listener;
@@ -428,10 +450,9 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
             if (taskListener != null) {
                 ContainerStateWaiting waiting = status.getState().getWaiting();
                 // skip initial "ContainerCreating" event
-                if (waiting != null  && !IGNORE_REASONS.contains(waiting.getReason())) {
-                    StringBuilder logMsg = new StringBuilder()
-                            .append("Ephemeral container ")
-                            .append(containerUrl);
+                if (waiting != null && !IGNORE_REASONS.contains(waiting.getReason())) {
+                    StringBuilder logMsg =
+                            new StringBuilder().append("Ephemeral container ").append(containerUrl);
                     String message = waiting.getMessage();
                     if (message != null) {
                         logMsg.append(" ").append(message);
@@ -442,7 +463,5 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
                 }
             }
         }
-
     }
-
 }

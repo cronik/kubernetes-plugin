@@ -16,17 +16,6 @@
 
 package org.csanchez.jenkins.plugins.kubernetes;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Predicate;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Util;
@@ -41,12 +30,16 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
+import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.lang.StringUtils;
 
 public final class PodUtils {
@@ -57,7 +50,8 @@ public final class PodUtils {
     public static final Predicate<ContainerStatus> CONTAINER_IS_WAITING =
             cs -> cs.getState().getWaiting() != null;
 
-    public static final Pattern NAME_PATTERN = Pattern.compile("[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*");
+    public static final Pattern NAME_PATTERN =
+            Pattern.compile("[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*");
 
     @NonNull
     public static List<ContainerStatus> getTerminatedContainers(Pod pod) {
@@ -109,14 +103,11 @@ public final class PodUtils {
         }
 
         Predicate<ContainerStatus> finder = cs -> StringUtils.equals(cs.getName(), containerName);
-        Optional<ContainerStatus> status = podStatus.getContainerStatuses()
-                .stream()
-                .filter(finder)
-                .findFirst();
+        Optional<ContainerStatus> status =
+                podStatus.getContainerStatuses().stream().filter(finder).findFirst();
 
         if (!status.isPresent()) {
-            status = podStatus.getEphemeralContainerStatuses()
-                    .stream()
+            status = podStatus.getEphemeralContainerStatuses().stream()
                     .filter(finder)
                     .findFirst();
         }

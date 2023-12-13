@@ -1,14 +1,12 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
-import hudson.Util;
 import hudson.model.Descriptor;
 import hudson.model.Node;
 import hudson.slaves.NodeProvisioner;
-import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
-import org.jenkinsci.plugins.cloudstats.TrackedPlannedNode;
-
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.TrackedPlannedNode;
 
 /**
  * The default {@link PlannedNodeBuilder} implementation, in case there is other registered.
@@ -25,7 +23,8 @@ public class StandardPlannedNodeBuilder extends PlannedNodeBuilder {
                     .podTemplate(t.isUnwrapped() ? t : cloud.getUnwrappedTemplate(t))
                     .cloud(cloud)
                     .build();
-            id = agent.getId(); // always use one sourced from the slave we are provisioning so the identity is maintained
+            id = agent.getId(); // always use one sourced from the slave we are provisioning so the identity is
+            // maintained
             f = CompletableFuture.completedFuture(agent);
         } catch (IOException | Descriptor.FormException e) {
             f = new CompletableFuture<>();

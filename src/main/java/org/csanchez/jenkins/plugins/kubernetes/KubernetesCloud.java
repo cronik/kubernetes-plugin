@@ -550,15 +550,6 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
         this.podRetention = podRetention;
     }
 
-    public Integer getWaitForPodSec() {
-        return waitForPodSec;
-    }
-
-    @DataBoundSetter
-    public void setWaitForPodSec(Integer waitForPodSec) {
-        this.waitForPodSec = waitForPodSec;
-    }
-
     /**
      * Are ephemeral containers enabled/allowed for this cluster.
      * @return true if allowed
@@ -787,7 +778,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 && Objects.equals(getPodLabels(), that.getPodLabels())
                 && Objects.equals(podRetention, that.podRetention)
                 && Objects.equals(waitForPodSec, that.waitForPodSec)
-                && useJenkinsProxy == that.useJenkinsProxy 
+                && useJenkinsProxy == that.useJenkinsProxy
                 && ephemeralContainersEnabled == that.ephemeralContainersEnabled;
     }
 
@@ -1090,7 +1081,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 + maxRequestsPerHost + ", waitForPodSec="
                 + waitForPodSec + ", podRetention="
                 + podRetention + ", useJenkinsProxy="
-                + useJenkinsProxy + ", ephemeralContainersEnabled=" 
+                + useJenkinsProxy + ", ephemeralContainersEnabled="
                 + ephemeralContainersEnabled + ", templates="
                 + templates + '}';
     }

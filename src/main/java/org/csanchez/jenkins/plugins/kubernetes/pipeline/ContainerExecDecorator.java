@@ -18,8 +18,19 @@ package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
 import static org.csanchez.jenkins.plugins.kubernetes.pipeline.Constants.EXIT;
 
-import static org.csanchez.jenkins.plugins.kubernetes.pipeline.Constants.EXIT;
-
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.AbortException;
+import hudson.EnvVars;
+import hudson.FilePath;
+import hudson.Launcher;
+import hudson.LauncherDecorator;
+import hudson.Proc;
+import hudson.model.Computer;
+import hudson.model.Node;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.dsl.ExecListener;
+import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.FilterOutputStream;
@@ -44,20 +55,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.AbortException;
-import hudson.EnvVars;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.LauncherDecorator;
-import hudson.Proc;
-import hudson.model.Computer;
-import hudson.model.Node;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.fabric8.kubernetes.client.dsl.ExecListener;
-import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import org.apache.commons.io.output.TeeOutputStream;
 import org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
@@ -287,7 +284,8 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                         : ContainerTemplate.DEFAULT_WORKING_DIR;
                 String containerWorkingDirStr = ContainerTemplate.DEFAULT_WORKING_DIR;
                 if (slave != null && slave.getPod().isPresent() && containerName != null) {
-                    Optional<String> containerWorkingDir = PodUtils.getContainerWorkingDir(slave.getPod().get(), containerName);
+                    Optional<String> containerWorkingDir =
+                            PodUtils.getContainerWorkingDir(slave.getPod().get(), containerName);
 
                     if (containerWorkingDir.isPresent()) {
                         containerWorkingDirStr = containerWorkingDir.get();
@@ -642,11 +640,8 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                     }
                     doExec(in, !launcher.isUnix(), printStream, masks, commands);
 
-                    //TODO update
-                    LOGGER.log(
-                            Level.INFO,
-                            "Created process inside pod: [" + getPodName() + "], container: [" + containerName + "]"
-                                    + "[" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startMethod) + " ms]");
+                    LOGGER.fine(() -> "Created process inside pod: [" + getPodName() + "], container: [" + containerName
+                            + "]" + "[" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startMethod) + " ms]");
                     ContainerExecProc proc = new ContainerExecProc(watch, alive, finished, stdin, printStream);
                     closables.add(proc);
                     return proc;
@@ -911,5 +906,4 @@ public class ContainerExecDecorator extends LauncherDecorator implements Seriali
                 .map(ev -> ev.replaceAll("\\$\\$", Matcher.quoteReplacement("$")))
                 .toArray(String[]::new);
     }
-
 }

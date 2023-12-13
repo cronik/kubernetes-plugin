@@ -1,13 +1,5 @@
 package org.csanchez.jenkins.plugins.kubernetes.pipeline;
 
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Extension;
 import hudson.FilePath;
@@ -15,6 +7,13 @@ import hudson.Launcher;
 import hudson.model.Node;
 import hudson.model.Run;
 import hudson.model.TaskListener;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils;
 import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -48,7 +47,6 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @CheckForNull
     private String runAsGroup;
-
 
     @DataBoundConstructor
     public EphemeralContainerStep(String image) {
@@ -157,7 +155,8 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
         @Override
         public Set<? extends Class<?>> getRequiredContext() {
-            return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(Node.class, FilePath.class, Run.class, Launcher.class, TaskListener.class)));
+            return Collections.unmodifiableSet(new HashSet<>(
+                    Arrays.asList(Node.class, FilePath.class, Run.class, Launcher.class, TaskListener.class)));
         }
     }
 }

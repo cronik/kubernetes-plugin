@@ -1,14 +1,5 @@
 package org.csanchez.jenkins.plugins.kubernetes;
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
@@ -34,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -160,9 +152,7 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
             KubernetesCloud cloud = slave.getKubernetesCloud();
             KubernetesClient client = cloud.connect();
             String namespace = StringUtils.defaultIfBlank(slave.getNamespace(), client.getNamespace());
-            PodResource resource = client.pods()
-                    .inNamespace(namespace)
-                    .withName(getName());
+            PodResource resource = client.pods().inNamespace(namespace).withName(getName());
 
             // check if pod exists
             Pod pod = resource.get();
@@ -266,7 +256,9 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
         KubernetesSlave slave = getNode();
         if (slave != null) {
             KubernetesCloud cloud = slave.getKubernetesCloud();
-            envVars.put("KUBERNETES_CLOUD_EPHEMERAL_CONTAINERS_ENABLED", Boolean.toString(cloud.isEphemeralContainersEnabled()));
+            envVars.put(
+                    "KUBERNETES_CLOUD_EPHEMERAL_CONTAINERS_ENABLED",
+                    Boolean.toString(cloud.isEphemeralContainersEnabled()));
         }
 
         return envVars;

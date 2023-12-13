@@ -29,27 +29,6 @@ import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.combine;
 import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.isNullOrEmpty;
 import static org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils.substituteEnv;
 
-import hudson.Extension;
-import hudson.util.IOUtils;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import javax.swing.text.html.Option;
-
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -68,9 +47,6 @@ import io.fabric8.kubernetes.api.model.ExecAction;
 import io.fabric8.kubernetes.api.model.LocalObjectReference;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
-import io.fabric8.kubernetes.api.model.PodFluent.MetadataNested;
-import io.fabric8.kubernetes.api.model.PodFluent.SpecNested;
-import io.fabric8.kubernetes.api.model.PodSpecFluent;
 import io.fabric8.kubernetes.api.model.Probe;
 import io.fabric8.kubernetes.api.model.ProbeBuilder;
 import io.fabric8.kubernetes.api.model.Quantity;
@@ -210,7 +186,7 @@ public class PodTemplateBuilder {
         for (ContainerTemplate containerTemplate : template.getContainers()) {
             containers.put(
                     containerTemplate.getName(),
-                    createContainer(containerTemplate, template.getEnvVars(), volumeMounts.values()));
+                    createContainer(containerTemplate, template.getEnvVars(), volumes.mounts.values()));
         }
 
         var metadataBuilder = new PodBuilder().withNewMetadata();
@@ -304,11 +280,9 @@ public class PodTemplateBuilder {
                 .findFirst();
         Container jnlp = jnlpOpt.orElse(new ContainerBuilder()
                 .withName(JNLP_NAME)
-                .withVolumeMounts(volumes.mounts
-                        .values()
-                        .toArray(new VolumeMount[volumeMounts.values().size()]))
+                .withVolumeMounts(volumes.mounts.values().toArray(new VolumeMount[0]))
                 .build());
-        if (!jnlpOpt.isPresent()) {
+        if (jnlpOpt.isEmpty()) {
             pod.getSpec().getContainers().add(jnlp);
         }
         pod.getSpec().getContainers().stream()
@@ -534,9 +508,7 @@ public class PodTemplateBuilder {
         Pod pod = agent.getPod().orElseThrow(() -> new IllegalStateException("Agent Pod not assigned"));
         Map<String, EnvVar> envVarsMap = new HashMap<>();
         if (containerTemplate.getEnvVars() != null) {
-            containerTemplate.getEnvVars().forEach(item ->
-                    envVarsMap.put(item.getKey(), item.buildEnvVar())
-            );
+            containerTemplate.getEnvVars().forEach(item -> envVarsMap.put(item.getKey(), item.buildEnvVar()));
         }
 
         EnvVar[] envVars = envVarsMap.values().toArray(new EnvVar[0]);
@@ -550,23 +522,28 @@ public class PodTemplateBuilder {
                 .withWorkingDir(containerTemplate.getWorkingDir())
                 .addToEnv(envVars);
 
-       Optional<Container> jnlp = pod.getSpec().getContainers().stream().filter(c -> JNLP_NAME.equals(c.getName())).findFirst();
-       if (jnlp.isPresent()) {
-           containerBuilder.withVolumeMounts(jnlp.get().getVolumeMounts().toArray(new VolumeMount[0]));
-           if (containerTemplate.getWorkingDir() == null) {
-               containerBuilder.withWorkingDir(jnlp.get().getWorkingDir());
-           }
-       }
+        Optional<Container> jnlp = pod.getSpec().getContainers().stream()
+                .filter(c -> JNLP_NAME.equals(c.getName()))
+                .findFirst();
+        if (jnlp.isPresent()) {
+            containerBuilder.withVolumeMounts(jnlp.get().getVolumeMounts().toArray(new VolumeMount[0]));
+            if (containerTemplate.getWorkingDir() == null) {
+                containerBuilder.withWorkingDir(jnlp.get().getWorkingDir());
+            }
+        }
 
-       if (containerTemplate.isPrivileged() || containerTemplate.getRunAsUserAsLong() != null || containerTemplate.getRunAsGroupAsLong() != null) {
-            containerBuilder = containerBuilder.withNewSecurityContext()
+        if (containerTemplate.isPrivileged()
+                || containerTemplate.getRunAsUserAsLong() != null
+                || containerTemplate.getRunAsGroupAsLong() != null) {
+            containerBuilder = containerBuilder
+                    .withNewSecurityContext()
                     .withPrivileged(containerTemplate.isPrivileged())
                     .withRunAsUser(containerTemplate.getRunAsUserAsLong())
                     .withRunAsGroup(containerTemplate.getRunAsGroupAsLong())
                     .endSecurityContext();
-       }
+        }
 
-       return containerBuilder.build();
+        return containerBuilder.build();
     }
 
     private VolumeMount getDefaultVolumeMount(@CheckForNull String workingDir) {
@@ -708,7 +685,9 @@ public class PodTemplateBuilder {
             final String mountPath = normalizePath(volume.getMountPath());
             if (!agentPodVolumes.mounts.containsKey(mountPath)) {
                 VolumeMountBuilder volumeMountBuilder = new VolumeMountBuilder() //
-                        .withMountPath(mountPath).withName(volumeName).withReadOnly(false);
+                        .withMountPath(mountPath)
+                        .withName(volumeName)
+                        .withReadOnly(false);
 
                 if (volume instanceof ConfigMapVolume) {
                     final ConfigMapVolume configmapVolume = (ConfigMapVolume) volume;
@@ -728,7 +707,8 @@ public class PodTemplateBuilder {
             }
         }
 
-        agentPodVolumes.volumes.put(WORKSPACE_VOLUME_NAME, template.getWorkspaceVolume().buildVolume(WORKSPACE_VOLUME_NAME, podName));
+        agentPodVolumes.volumes.put(
+                WORKSPACE_VOLUME_NAME, template.getWorkspaceVolume().buildVolume(WORKSPACE_VOLUME_NAME, podName));
         return agentPodVolumes;
     }
 

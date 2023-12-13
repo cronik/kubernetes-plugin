@@ -47,7 +47,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,14 +61,12 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 import jenkins.util.Listeners;
 import jenkins.util.Timer;
-import org.apache.commons.lang.mutable.MutableBoolean;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesClientProvider;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesComputer;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 import org.csanchez.jenkins.plugins.kubernetes.PodUtils;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
-import org.jvnet.localizer.Localizable;
 
 /**
  * Checks for deleted pods corresponding to {@link KubernetesSlave} and ensures the node is removed from Jenkins too.

@@ -5,24 +5,6 @@ import static org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud.JNLP_NAME;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
-import hudson.FilePath;
-import hudson.Util;
-import hudson.slaves.SlaveComputer;
-import io.fabric8.kubernetes.api.model.Container;
-import io.fabric8.kubernetes.client.utils.Serialization;
-import jenkins.metrics.api.Metrics;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.Validate;
-import org.csanchez.jenkins.plugins.kubernetes.pod.retention.PodRetention;
-import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
-import org.jenkinsci.plugins.cloudstats.TrackedItem;
-import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
-import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
-import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
-import org.jvnet.localizer.ResourceBundleHolder;
-import org.kohsuke.stapler.DataBoundConstructor;
-
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -50,7 +32,6 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -63,10 +44,11 @@ import java.util.logging.Logger;
 import jenkins.metrics.api.Metrics;
 import jenkins.model.Jenkins;
 import jenkins.security.MasterToSlaveCallable;
-import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
 import org.csanchez.jenkins.plugins.kubernetes.pod.retention.PodRetention;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
@@ -297,10 +279,18 @@ public class KubernetesSlave extends AbstractCloudSlave implements TrackedItem {
         if (pod == null) {
             // if jenkins restarts the transient pod reference may not be available
             try {
-                Pod p = getKubernetesCloud().connect().pods().withName(getPodName()).get();
+                Pod p = getKubernetesCloud()
+                        .connect()
+                        .pods()
+                        .withName(getPodName())
+                        .get();
                 return Optional.ofNullable(p);
             } catch (KubernetesAuthException | IOException e) {
-                LOGGER.log(Level.WARNING, e, () -> String.format("Failed to connect to cloud %s to get pod %s", getCloudName(), getPodName()));
+                LOGGER.log(
+                        Level.WARNING,
+                        e,
+                        () -> String.format(
+                                "Failed to connect to cloud %s to get pod %s", getCloudName(), getPodName()));
                 return Optional.empty();
             }
         } else {
