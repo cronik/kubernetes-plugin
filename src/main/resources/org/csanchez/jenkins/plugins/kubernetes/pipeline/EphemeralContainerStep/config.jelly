@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+    <f:entry field="image" title="${%Image reference}">
+        <f:textbox clazz="required"/>
+    </f:entry>
+    <f:advanced>
+        <f:entry field="alwaysPullImage" title="${%Always pull image}" >
+            <f:checkbox default="true"/>
+        </f:entry>
+
+        <f:entry field="commandLine" title="${%Command}" description="${%Container command}">
+            <f:textbox/>
+        </f:entry>
+
+        <f:entry field="envVars"  title="${%EnvVars}" description="${%Environment variables to set}">
+            <f:repeatableHeteroProperty field="envVars" hasHeader="true" addCaption="${%Add Environment Variable}"
+                                        deleteCaption="${%Delete Environment Variable}" />
+        </f:entry>
+
+        <f:entry field="runAsUser" title="${%Run As User ID}">
+          <f:textbox/>
+        </f:entry>
+
+        <f:entry field="runAsGroup" title="${%Run As Group ID}">
+          <f:textbox/>
+        </f:entry>
+
+        <f:entry field="shell" title="${%Shell}">
+            <f:textbox/>
+        </f:entry>
+
+        <f:entry field="targetContainer" title="${%Target Container Name}">
+            <f:textbox/>
+        </f:entry>
+    </f:advanced>
+</j:jelly>

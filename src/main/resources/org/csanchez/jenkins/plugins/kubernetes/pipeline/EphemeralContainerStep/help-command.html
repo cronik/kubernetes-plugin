@@ -1,0 +1,16 @@
+<p>
+    Override the image entrypoint.
+</p>
+<p>
+    If an empty array, disable the default image entrypoint with the Jenkins monitor command.
+</p>
+<p>
+    If a non-empty command is provided, it must be able to accept a monitor command and arguments which must be executed.
+</p>
+<pre><code>sh '''#!/bin/bash
+# do some stuff
+
+# execute monitor command provided by jenkins
+exec "$@"
+'''</code></pre>
+

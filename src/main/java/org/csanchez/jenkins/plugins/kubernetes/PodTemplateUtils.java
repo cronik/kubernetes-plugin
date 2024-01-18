@@ -62,12 +62,16 @@ import org.apache.commons.lang.StringUtils;
 import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
 import org.csanchez.jenkins.plugins.kubernetes.volumes.PodVolume;
 import org.csanchez.jenkins.plugins.kubernetes.volumes.workspace.WorkspaceVolume;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
 
 public class PodTemplateUtils {
 
     private static final Logger LOGGER = Logger.getLogger(PodTemplateUtils.class.getName());
 
     private static final Pattern LABEL_VALIDATION = Pattern.compile("[a-zA-Z0-9]([_\\.\\-a-zA-Z0-9]*[a-zA-Z0-9])?");
+
+    private static final Pattern SPLIT_IN_SPACES = Pattern.compile("([^\"]\\S*|\".+?\")\\s*");
 
     @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "tests & emergency admin")
     public static boolean SUBSTITUTE_ENV = Boolean.getBoolean(PodTemplateUtils.class.getName() + ".SUBSTITUTE_ENV");
@@ -790,6 +794,26 @@ public class PodTemplateUtils {
     /** TODO perhaps enforce https://docs.docker.com/engine/reference/commandline/tag/#extended-description */
     public static boolean validateImage(String image) {
         return image != null && image.matches("\\S+");
+    }
+
+    /**
+     * Split a command in the parts that Docker need
+     *
+     * @param dockerCommand docker command to parse
+     * @return command split by arguments
+     */
+    public static @CheckForNull List<String> splitCommandLine(@CheckForNull String dockerCommand) {
+        if (dockerCommand == null || dockerCommand.isEmpty()) {
+            return null;
+        }
+
+        // handle quoted arguments
+        Matcher m = SPLIT_IN_SPACES.matcher(dockerCommand);
+        List<String> commands = new ArrayList<>();
+        while (m.find()) {
+            commands.add(substituteEnv(m.group(1).replace("\"", "")));
+        }
+        return commands;
     }
 
     private static List<EnvVar> combineEnvVars(Container parent, Container template) {

@@ -1,0 +1,9 @@
+<p>
+    Docker image reference for the container. The image must have a shell available (i.e. `sh`).
+</p>
+<p>
+    If the image defines an entrypoint it must be able to accept and execute a command and
+    arguments. Jenkins must be able to stop the container and to do so it passes a process
+    monitor command to know when to exit the container. If the image entrypoint to not
+    perform the monitor task the ephemeral container may not work correctly.
+</p>

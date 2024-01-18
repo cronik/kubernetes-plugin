@@ -4,6 +4,7 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.Util;
 import hudson.model.Node;
 import hudson.model.Run;
 import hudson.model.TaskListener;
@@ -14,14 +15,20 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import hudson.util.FormValidation;
+import org.apache.commons.lang.StringUtils;
+import org.csanchez.jenkins.plugins.kubernetes.PodTemplateBuilder;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils;
 import org.csanchez.jenkins.plugins.kubernetes.model.TemplateEnvVar;
+import org.jenkinsci.plugins.structs.describable.UninstantiatedDescribable;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
 
 /**
  * Pipeline step that runs in an ephemeral container of the current Kubernetes Pod agent.
@@ -84,7 +91,7 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @DataBoundSetter
     public void setShell(String shell) {
-        this.shell = shell;
+        this.shell = Util.fixEmpty(shell);
     }
 
     public String getTargetContainer() {
@@ -93,7 +100,7 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @DataBoundSetter
     public void setTargetContainer(String targetContainer) {
-        this.targetContainer = targetContainer;
+        this.targetContainer = Util.fixEmpty(targetContainer);
     }
 
     public boolean isAlwaysPullImage() {
@@ -112,7 +119,7 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @DataBoundSetter
     public void setRunAsUser(@CheckForNull String runAsUser) {
-        this.runAsUser = runAsUser;
+        this.runAsUser = Util.fixEmpty(runAsUser);
     }
 
     @CheckForNull
@@ -122,7 +129,7 @@ public class EphemeralContainerStep extends Step implements Serializable {
 
     @DataBoundSetter
     public void setRunAsGroup(@CheckForNull String runAsGroup) {
-        this.runAsGroup = runAsGroup;
+        this.runAsGroup = Util.fixEmpty(runAsGroup);
     }
 
     @CheckForNull
@@ -133,6 +140,29 @@ public class EphemeralContainerStep extends Step implements Serializable {
     @DataBoundSetter
     public void setCommand(@CheckForNull List<String> command) {
         this.command = command;
+    }
+
+    /**
+     * Use {@link #setCommand(List)} for precise command construction. This setter is used by the snippet
+     * generator.
+     * @param command full command line
+     */
+    @SuppressWarnings("unused") // Used by jelly
+    @DataBoundSetter
+    @Deprecated
+    public void setCommandLine(@CheckForNull String command) {
+        setCommand(PodTemplateUtils.splitCommandLine(command));
+    }
+
+    /**
+     * This returns the {@link #getCommand()} joined with a space. It will not precisely round trip with
+     * {@link #setCommandLine(String)} for example if one of the arguments contains a space.
+     * @return the command args joined by a space
+     */
+    @SuppressWarnings("unused") // Used by jelly
+    @CheckForNull
+    public String getCommandLine() {
+        return this.command == null ? null : StringUtils.join(this.command, " ");
     }
 
     @Extension
@@ -158,5 +188,26 @@ public class EphemeralContainerStep extends Step implements Serializable {
             return Collections.unmodifiableSet(new HashSet<>(
                     Arrays.asList(Node.class, FilePath.class, Run.class, Launcher.class, TaskListener.class)));
         }
+
+        @SuppressWarnings("unused") // Used by jelly
+        public FormValidation doCheckImage(@QueryParameter String value) {
+            if (StringUtils.isEmpty(value)) {
+                return FormValidation.error("Image is mandatory");
+            } else if (PodTemplateUtils.validateImage(value)) {
+                return FormValidation.ok();
+            } else {
+                return FormValidation.error("Malformed image");
+            }
+        }
+
+        @SuppressWarnings("unused") // Used by jelly
+        public FormValidation doCheckTargetContainer(@QueryParameter String value) {
+            if (PodTemplateUtils.validateContainerName(value)) {
+                return FormValidation.ok();
+            } else {
+                return FormValidation.error("Invalid container name");
+            }
+        }
+
     }
 }
