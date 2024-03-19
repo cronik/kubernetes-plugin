@@ -585,6 +585,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
     @Override
     public Collection<NodeProvisioner.PlannedNode> provision(
             @NonNull final Cloud.CloudState state, final int excessWorkload) {
+        var limitRegistrationResults = new LimitRegistrationResults(this);
         try {
             Metrics.metricRegistry().meter(metricNameForLabel(state.getLabel())).mark(excessWorkload);
             Label label = state.getLabel();
@@ -603,8 +604,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 // check overall concurrency limit using the default label(s) on all templates
                 int numExecutors = 1;
                 PodTemplate unwrappedTemplate = getUnwrappedTemplate(podTemplate);
-                while (toBeProvisioned > 0
-                        && KubernetesProvisioningLimits.get().register(this, podTemplate, numExecutors)) {
+                while (toBeProvisioned > 0 && limitRegistrationResults.register(podTemplate, numExecutors)) {
                     plannedNodes.add(PlannedNodeBuilderFactory.createInstance()
                             .cloud(this)
                             .template(unwrappedTemplate)
@@ -641,8 +641,11 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                         "Failed to count the # of live instances on Kubernetes",
                         cause != null ? cause : e);
             }
+            limitRegistrationResults.unregister();
         } catch (Exception e) {
+            Metrics.metricRegistry().counter(MetricNames.PROVISION_FAILED).inc();
             LOGGER.log(Level.WARNING, "Failed to count the # of live instances on Kubernetes", e);
+            limitRegistrationResults.unregister();
         }
         return Collections.emptyList();
     }
@@ -715,6 +718,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      * Add a new template to the cloud
      * @param t docker template
      */
+    @Override
     public void addTemplate(PodTemplate t) {
         this.templates.add(t);
         // t.parent = this;
