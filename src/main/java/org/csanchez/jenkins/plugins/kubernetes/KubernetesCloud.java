@@ -147,6 +147,9 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
     @CheckForNull
     private PodRetention podRetention = PodRetention.getKubernetesCloudDefault();
 
+    @CheckForNull
+    private GarbageCollection garbageCollection;
+
     private boolean ephemeralContainersEnabled = true;
 
     @DataBoundConstructor
@@ -334,6 +337,15 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
     @Deprecated
     public boolean isCapOnlyOnAlivePods() {
         return capOnlyOnAlivePods;
+    }
+
+    public GarbageCollection getGarbageCollection() {
+        return garbageCollection;
+    }
+
+    @DataBoundSetter
+    public void setGarbageCollection(GarbageCollection garbageCollection) {
+        this.garbageCollection = garbageCollection;
     }
 
     /**
@@ -782,8 +794,9 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 && Objects.equals(getPodLabels(), that.getPodLabels())
                 && Objects.equals(podRetention, that.podRetention)
                 && Objects.equals(waitForPodSec, that.waitForPodSec)
-                && useJenkinsProxy == that.useJenkinsProxy
-                && ephemeralContainersEnabled == that.ephemeralContainersEnabled;
+                && Objects.equals(garbageCollection, that.garbageCollection)
+                && ephemeralContainersEnabled == that.ephemeralContainersEnabled
+                && useJenkinsProxy == that.useJenkinsProxy;
     }
 
     @Override
@@ -811,7 +824,8 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 maxRequestsPerHost,
                 podRetention,
                 useJenkinsProxy,
-                ephemeralContainersEnabled);
+                ephemeralContainersEnabled,
+                garbageCollection);
     }
 
     public Integer getWaitForPodSec() {
@@ -1087,7 +1101,8 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 + podRetention + ", useJenkinsProxy="
                 + useJenkinsProxy + ", ephemeralContainersEnabled="
                 + ephemeralContainersEnabled + ", templates="
-                + templates + '}';
+                + templates + ", garbageCollection="
+                + garbageCollection + '}';
     }
 
     private Object readResolve() {

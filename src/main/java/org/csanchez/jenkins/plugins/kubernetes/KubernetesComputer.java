@@ -210,6 +210,10 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
         return new KubernetesComputerACL(base);
     }
 
+    public void annotateTtl(TaskListener listener) {
+        Optional.ofNullable(getNode()).ifPresent(ks -> ks.annotateTtl(listener));
+    }
+
     /**
      * Simple static inner class to be used by {@link #getACL()}.
      * It replaces an anonymous inner class in order to fix
