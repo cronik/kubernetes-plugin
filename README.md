@@ -291,6 +291,41 @@ podTemplate(containers: […]) {
 }
 ```
 
+### Ephemeral containers support
+
+You can use the `ephemeralContainer` step to launch an ad-hoc container in the current agent pod. Unlike `container`, 
+`ephemeralContainer` does not require a container template to be defined in the pod template and exit at the end of
+the step execution.
+
+```groovy
+podTemplate {
+    node(POD_LABEL) {
+        stage('Build a Maven project') {
+            git 'https://github.com/jenkinsci/kubernetes-plugin.git'
+            ephemeralContainer(image: 'maven') {
+                sh 'mvn -B -ntp clean package -DskipTests'
+            }
+        }
+        stage('Build a Golang project') {
+            git url: 'https://github.com/hashicorp/terraform.git', branch: 'main'
+            ephemeralContainer(image: 'golang') {
+                sh '''
+          mkdir -p /go/src/github.com/hashicorp
+          ln -s `pwd` /go/src/github.com/hashicorp/terraform
+          cd /go/src/github.com/hashicorp/terraform && make
+        '''
+            }
+        }
+    }
+}
+```
+
+Some things to keep in mind when using ephemeral containers:
+- Ephemeral containers can't specify resource requests or limits, so it is important that enough resources are allocated to the pod template to support the ephemeral containers.
+- Kuberenetes has a hard limit on the Pod resource config size, adding a large number of ephemeral containers may trigger this limit. 
+  For this reason it is not recommended to reuse pod agents across multiple builds and set the `idleMinutes` to `0`.
+- The Ephemeral container will exit at the end of the `ephemeralContainer` block.
+
 ### Retrying after infrastructure outages
 
 You can use the `retry` step to automatically try the whole build stage again with a fresh pod in case of fatal infrastructure problems.
