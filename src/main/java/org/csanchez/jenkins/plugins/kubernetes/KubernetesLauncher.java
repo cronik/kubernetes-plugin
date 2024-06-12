@@ -31,7 +31,10 @@ import static java.util.logging.Level.WARNING;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Functions;
+import hudson.model.Descriptor;
+import hudson.model.Run;
 import hudson.model.TaskListener;
+import hudson.slaves.ComputerLauncher;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.SlaveComputer;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
@@ -47,12 +50,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import jenkins.metrics.api.Metrics;
 import org.apache.commons.lang.StringUtils;
+import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecoratorException;
 import org.csanchez.jenkins.plugins.kubernetes.pod.retention.Reaper;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -68,7 +71,7 @@ public class KubernetesLauncher extends JNLPLauncher {
 
     private static final Logger LOGGER = Logger.getLogger(KubernetesLauncher.class.getName());
 
-    private final AtomicBoolean launched = new AtomicBoolean(false);
+    private volatile boolean launched = false;
 
     /**
      * Provisioning exception if any.
@@ -87,7 +90,7 @@ public class KubernetesLauncher extends JNLPLauncher {
 
     @Override
     public boolean isLaunchSupported() {
-        return !launched.get();
+        return !launched;
     }
 
     @Override
@@ -104,18 +107,32 @@ public class KubernetesLauncher extends JNLPLauncher {
         if (node == null) {
             throw new IllegalStateException("Node has been removed, cannot launch " + computer.getName());
         }
-        if (launched.get()) {
+        if (launched) {
             LOGGER.log(INFO, "Agent has already been launched, activating: {0}", node.getNodeName());
             computer.setAcceptingTasks(true);
             return;
         }
 
         String cloudName = node.getCloudName();
-        final PodTemplate template = node.getTemplate();
+
         try {
+            PodTemplate template = node.getTemplate();
             KubernetesCloud cloud = node.getKubernetesCloud();
             KubernetesClient client = cloud.connect();
-            Pod pod = template.build(node);
+            Pod pod;
+            try {
+                pod = template.build(node);
+            } catch (PodDecoratorException e) {
+                Run<?, ?> run = template.getRun();
+                if (run != null) {
+                    template.getListener().getLogger().println("Failed to build pod definition : " + e.getMessage());
+                    PodUtils.cancelQueueItemFor(run.getUrl(), template.getLabel(), e.getMessage(), null);
+                }
+                e.printStackTrace(listener.fatalError("Failed to build pod definition"));
+                setProblem(e);
+                terminateOrLog(node);
+                return;
+            }
             node.assignPod(pod);
 
             String podName = pod.getMetadata().getName();
@@ -128,51 +145,71 @@ public class KubernetesLauncher extends JNLPLauncher {
                     .orElse(null);
             node.setNamespace(namespace);
 
-            LOGGER.log(FINE, () -> "Creating Pod: " + cloudName + " " + namespace + "/" + podName);
-            try {
-                pod = client.pods().inNamespace(namespace).create(pod);
-            } catch (KubernetesClientException e) {
-                Metrics.metricRegistry().counter(MetricNames.CREATION_FAILED).inc();
-                int httpCode = e.getCode();
-                if (400 <= httpCode && httpCode < 500) { // 4xx
-                    if (httpCode == 403 && e.getMessage().contains("is forbidden: exceeded quota")) {
-                        node.getRunListener()
-                                .getLogger()
-                                .printf(
-                                        "WARNING: Unable to create pod: %s %s/%s because kubernetes resource quota exceeded. %n%s%nRetrying...%n%n",
-                                        cloudName, namespace, pod.getMetadata().getName(), e.getMessage());
-                    } else if (httpCode == 409
-                            && e.getMessage().contains("Operation cannot be fulfilled on resourcequotas")) {
-                        // See: https://github.com/kubernetes/kubernetes/issues/67761 ; A retry usually works.
-                        node.getRunListener()
-                                .getLogger()
-                                .printf(
-                                        "WARNING: Unable to create pod: %s %s/%s because kubernetes resource quota update conflict. %n%s%nRetrying...%n%n",
-                                        cloudName, namespace, pod.getMetadata().getName(), e.getMessage());
+            // if the controller was interrupted after creating the pod but before it connected back, then
+            // the pod might already exist and the creating logic must be skipped.
+            Pod existingPod =
+                    client.pods().inNamespace(namespace).withName(podName).get();
+            if (existingPod == null) {
+                LOGGER.log(FINE, () -> "Creating Pod: " + cloudName + " " + namespace + "/" + podName);
+                try {
+                    pod = client.pods().inNamespace(namespace).create(pod);
+                } catch (KubernetesClientException e) {
+                    Metrics.metricRegistry()
+                            .counter(MetricNames.CREATION_FAILED)
+                            .inc();
+                    int httpCode = e.getCode();
+                    if (400 <= httpCode && httpCode < 500) { // 4xx
+                        if (httpCode == 403 && e.getMessage().contains("is forbidden: exceeded quota")) {
+                            node.getRunListener()
+                                    .getLogger()
+                                    .printf(
+                                            "WARNING: Unable to create pod: %s %s/%s because kubernetes resource quota exceeded. %n%s%nRetrying...%n%n",
+                                            cloudName,
+                                            namespace,
+                                            pod.getMetadata().getName(),
+                                            e.getMessage());
+                        } else if (httpCode == 409
+                                && e.getMessage().contains("Operation cannot be fulfilled on resourcequotas")) {
+                            // See: https://github.com/kubernetes/kubernetes/issues/67761 ; A retry usually works.
+                            node.getRunListener()
+                                    .getLogger()
+                                    .printf(
+                                            "WARNING: Unable to create pod: %s %s/%s because kubernetes resource quota update conflict. %n%s%nRetrying...%n%n",
+                                            cloudName,
+                                            namespace,
+                                            pod.getMetadata().getName(),
+                                            e.getMessage());
+                        } else {
+                            node.getRunListener()
+                                    .getLogger()
+                                    .printf(
+                                            "ERROR: Unable to create pod %s %s/%s.%n%s%n",
+                                            cloudName,
+                                            namespace,
+                                            pod.getMetadata().getName(),
+                                            e.getMessage());
+                            PodUtils.cancelQueueItemFor(pod, e.getMessage());
+                        }
+                    } else if (500 <= httpCode && httpCode < 600) { // 5xx
+                        LOGGER.log(FINE, "Kubernetes returned HTTP code {0} {1}. Retrying...", new Object[] {
+                            e.getCode(), e.getStatus()
+                        });
                     } else {
-                        node.getRunListener()
-                                .getLogger()
-                                .printf(
-                                        "ERROR: Unable to create pod %s %s/%s.%n%s%n",
-                                        cloudName, namespace, pod.getMetadata().getName(), e.getMessage());
-                        PodUtils.cancelQueueItemFor(pod, e.getMessage());
+                        LOGGER.log(WARNING, "Kubernetes returned unhandled HTTP code {0} {1}", new Object[] {
+                            e.getCode(), e.getStatus()
+                        });
                     }
-                } else if (500 <= httpCode && httpCode < 600) { // 5xx
-                    LOGGER.log(FINE, "Kubernetes returned HTTP code {0} {1}. Retrying...", new Object[] {
-                        e.getCode(), e.getStatus()
-                    });
-                } else {
-                    LOGGER.log(WARNING, "Kubernetes returned unhandled HTTP code {0} {1}", new Object[] {
-                        e.getCode(), e.getStatus()
-                    });
+                    throw e;
                 }
-                throw e;
-            }
-            LOGGER.log(INFO, () -> "Created Pod: " + cloudName + " " + namespace + "/" + podName);
-            listener.getLogger().printf("Created Pod: %s %s/%s%n", cloudName, namespace, podName);
-            Metrics.metricRegistry().counter(MetricNames.PODS_CREATED).inc();
+                LOGGER.log(INFO, () -> "Created Pod: " + cloudName + " " + namespace + "/" + podName);
+                listener.getLogger().printf("Created Pod: %s %s/%s%n", cloudName, namespace, podName);
+                Metrics.metricRegistry().counter(MetricNames.PODS_CREATED).inc();
 
-            node.getRunListener().getLogger().printf("Created Pod: %s %s/%s%n", cloudName, namespace, podName);
+                node.getRunListener().getLogger().printf("Created Pod: %s %s/%s%n", cloudName, namespace, podName);
+            } else {
+                LOGGER.log(INFO, () -> "Pod already exists: " + cloudName + " " + namespace + "/" + podName);
+                listener.getLogger().printf("Pod already exists: %s %s/%s%n", cloudName, namespace, podName);
+            }
             kubernetesComputer.setLaunching(true);
 
             ObjectMeta podMetadata = pod.getMetadata();
@@ -267,7 +304,7 @@ public class KubernetesLauncher extends JNLPLauncher {
             }
 
             computer.setAcceptingTasks(true);
-            launched.set(true);
+            launched = true;
             try {
                 // We need to persist the "launched" setting...
                 node.save();
@@ -279,14 +316,20 @@ public class KubernetesLauncher extends JNLPLauncher {
             setProblem(ex);
             Functions.printStackTrace(ex, node.getRunListener().error("Failed to launch " + node.getPodName()));
             LOGGER.log(
-                    Level.WARNING, String.format("Error in provisioning; agent=%s, template=%s", node, template), ex);
+                    Level.WARNING,
+                    String.format("Error in provisioning; agent=%s, template=%s", node, node.getTemplateId()),
+                    ex);
             LOGGER.log(Level.FINER, "Removing Jenkins node: {0}", node.getNodeName());
-            try {
-                node.terminate();
-            } catch (IOException | InterruptedException e) {
-                LOGGER.log(Level.WARNING, "Unable to remove Jenkins node", e);
-            }
+            terminateOrLog(node);
             throw new RuntimeException(ex);
+        }
+    }
+
+    private static void terminateOrLog(KubernetesSlave node) {
+        try {
+            node.terminate();
+        } catch (IOException | InterruptedException e) {
+            LOGGER.log(Level.WARNING, "Unable to remove Jenkins node", e);
         }
     }
 
@@ -351,4 +394,12 @@ public class KubernetesLauncher extends JNLPLauncher {
     public void setProblem(@CheckForNull Throwable problem) {
         this.problem = problem;
     }
+
+    @Override
+    public Descriptor<ComputerLauncher> getDescriptor() {
+        return new DescriptorImpl();
+    }
+
+    // Only there to avoid throwing unnecessary exceptions. KubernetesLauncher is never instantiated via UI.
+    private static class DescriptorImpl extends Descriptor<ComputerLauncher> {}
 }

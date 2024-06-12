@@ -7,15 +7,20 @@ kind: Pod
 spec:
   containers:
   - name: maven
-    image: maven:3.6.3-jdk-8
+    # In a real Jenkinsfile, it is recommended to pin to a specific version and use Dependabot or Renovate to bump it.
+    image: maven:latest
     command:
     - sleep
     args:
     - infinity
+    securityContext:
+      # maven runs as root by default, it is recommended or even mandatory in some environments (such as pod security admission "restricted") to run as a non-root user.
+      runAsUser: 1000
 ''') {
-    node(POD_LABEL) {
-        // or, for example: git 'https://github.com/jglick/simple-maven-project-with-tests'
-        writeFile file: 'pom.xml', text: '''
+    retry(count: 2, conditions: [kubernetesAgent(), nonresumable()]) {
+        node(POD_LABEL) {
+            // or, for example: git 'https://github.com/jglick/simple-maven-project-with-tests'
+            writeFile file: 'pom.xml', text: '''
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
     <groupId>sample</groupId>
@@ -26,7 +31,7 @@ spec:
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.18.1</version>
+                <version>3.2.5</version>
             </plugin>
         </plugins>
     </build>
@@ -34,28 +39,29 @@ spec:
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
     </properties>
 </project>
         '''
-        writeFile file: 'src/test/java/sample/SomeTest.java', text: '''
+            writeFile file: 'src/test/java/sample/SomeTest.java', text: '''
 package sample;
 public class SomeTest {
     @org.junit.Test
     public void checks() {}
 }
         '''
-        container('maven') {
-            sh 'mvn -B -ntp -Dmaven.test.failure.ignore verify'
+            container('maven') {
+                // Maven needs write access to $HOME/.m2, which it doesn't have in the maven image because only root is a real user.
+                sh 'HOME=$WORKSPACE_TMP/maven mvn -B -ntp -Dmaven.test.failure.ignore verify'
+            }
+            junit '**/target/surefire-reports/TEST-*.xml'
+            archiveArtifacts '**/target/*.jar'
         }
-        junit '**/target/surefire-reports/TEST-*.xml'
-        archiveArtifacts '**/target/*.jar'
     }
 }

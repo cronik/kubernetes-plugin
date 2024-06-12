@@ -73,6 +73,7 @@ import java.util.stream.Collectors;
 import jenkins.metrics.api.Metrics;
 import jenkins.model.Jenkins;
 import org.csanchez.jenkins.plugins.kubernetes.GarbageCollection;
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesComputer;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesTestUtil;
@@ -80,6 +81,8 @@ import org.csanchez.jenkins.plugins.kubernetes.MetricNames;
 import org.csanchez.jenkins.plugins.kubernetes.PodAnnotation;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils;
+import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecorator;
+import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecoratorException;
 import org.hamcrest.MatcherAssert;
 import org.htmlunit.html.DomNodeUtil;
 import org.htmlunit.html.HtmlElement;
@@ -90,6 +93,7 @@ import org.jenkinsci.plugins.workflow.flow.GlobalDefaultFlowDurabilityLevel;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.jenkinsci.plugins.workflow.test.steps.SemaphoreStep;
+import org.jetbrains.annotations.NotNull;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -103,10 +107,13 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.JenkinsRuleNonLocalhost;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
+import org.jvnet.hudson.test.TestExtension;
 
 public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
 
     private static final Logger LOGGER = Logger.getLogger(KubernetesPipelineTest.class.getName());
+    public static final String POD_DEADLINE_EXCEEDED_MESSAGE =
+            "Pod just failed. Reason: DeadlineExceeded, Message: Pod was active on the node longer than the specified deadline.";
 
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
@@ -575,9 +582,7 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
     @Test
     public void podDeadlineExceeded() throws Exception {
         r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
-        r.waitForMessage(
-                "Pod just failed (Reason: DeadlineExceeded, Message: Pod was active on the node longer than the specified deadline)",
-                b);
+        r.waitForMessage(POD_DEADLINE_EXCEEDED_MESSAGE, b);
     }
 
     @Test
@@ -587,9 +592,7 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
         podTemplate.setActiveDeadlineSeconds(30);
         cloud.addTemplate(podTemplate);
         r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
-        r.waitForMessage(
-                "Pod just failed (Reason: DeadlineExceeded, Message: Pod was active on the node longer than the specified deadline)",
-                b);
+        r.waitForMessage(POD_DEADLINE_EXCEEDED_MESSAGE, b);
         r.waitForMessage("---Logs---", b);
     }
 
@@ -630,7 +633,7 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
     public void computerCantBeConfigured() throws Exception {
         r.jenkins.setSecurityRealm(r.createDummySecurityRealm());
         r.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
-                .grant(Jenkins.ADMINISTER)
+                .grant(Jenkins.MANAGE)
                 .everywhere()
                 .to("admin"));
         SemaphoreStep.waitForStart("pod/1", b);
@@ -912,5 +915,38 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
         assertNotNull(client.resource(finalPod).get());
         await().timeout(1, TimeUnit.MINUTES)
                 .until(() -> client.resource(finalPod).get() == null);
+    }
+
+    @Test
+    public void handleEviction() throws Exception {
+        SemaphoreStep.waitForStart("pod/1", b);
+        var client = cloud.connect();
+        var pod = client.pods()
+                .withLabels(getLabels(cloud, this, name))
+                .list()
+                .getItems()
+                .get(0);
+        client.pods().resource(pod).evict();
+        r.waitForMessage("Pod was evicted by the Kubernetes Eviction API", b);
+        SemaphoreStep.success("pod/1", null);
+        SemaphoreStep.waitForStart("pod/2", b);
+        SemaphoreStep.success("pod/2", null);
+        r.assertBuildStatusSuccess(r.waitForCompletion(b));
+    }
+
+    @Test
+    public void decoratorFailure() throws Exception {
+        r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+        r.assertLogContains("I always fail", b);
+        assertThat("Node should have been removed", r.jenkins.getNodes(), empty());
+    }
+
+    @TestExtension("decoratorFailure")
+    public static class DecoratorImpl implements PodDecorator {
+        @NotNull
+        @Override
+        public Pod decorate(@NotNull KubernetesCloud kubernetesCloud, @NotNull Pod pod) {
+            throw new PodDecoratorException("I always fail");
+        }
     }
 }

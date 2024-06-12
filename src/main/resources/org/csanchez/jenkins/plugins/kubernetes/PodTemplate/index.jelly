@@ -19,8 +19,8 @@ THE SOFTWARE.
 -->
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:f="/lib/form">
-  <l:layout permission="${app.SYSTEM_READ}" title="${%Pod template settings}">
-    <j:set var="readOnlyMode" value="${!app.hasPermission(app.ADMINISTER)}"/>
+  <l:layout permission="${app.MANAGE_AND_SYSTEM_READ}" title="${%Pod template settings}">
+    <j:set var="readOnlyMode" value="${!app.hasPermission(app.MANAGE)}"/>
     <l:breadcrumb title="${it.name}"/>
 
     <st:include page="sidepanel.jelly"/>
@@ -29,19 +29,25 @@ THE SOFTWARE.
       <f:form method="post" action="configSubmit" name="config" class="jenkins-form">
         <j:set var="instance" value="${it}"/>
         <j:set var="descriptor" value="${instance.descriptor}"/>
+        <j:set var="readOnlyMode" value="${instance.readonlyFromUi}"/>
+        <j:if test="${instance.readonlyFromUi}">
+          <f:description>This Pod template is associated with a <strong>non-configurable</strong> cloud setup.</f:description>
+        </j:if>
 
         <!-- main body of the configuration -->
         <st:include it="${instance}" page="config.jelly"/>
 
-        <l:isAdmin>
-          <f:bottomButtonBar>
-            <f:submit value="${%Save}"/>
-          </f:bottomButtonBar>
-        </l:isAdmin>
+        <l:hasAdministerOrManage>
+          <j:if test="${!instance.readonlyFromUi}">
+            <f:bottomButtonBar>
+              <f:submit value="${%Save}"/>
+            </f:bottomButtonBar>
+          </j:if>
+        </l:hasAdministerOrManage>
       </f:form>
-      <l:isAdmin>
+      <l:hasAdministerOrManage>
         <st:adjunct includes="lib.form.confirm"/> 
-      </l:isAdmin>
+      </l:hasAdministerOrManage>
     </l:main-panel>
   </l:layout>
 </j:jelly>

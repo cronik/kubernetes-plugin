@@ -10,9 +10,11 @@ import hudson.model.Descriptor;
 import hudson.model.DescriptorVisibilityFilter;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Run;
 import hudson.model.Saveable;
 import hudson.model.TaskListener;
 import hudson.model.labels.LabelAtom;
+import hudson.security.Permission;
 import hudson.slaves.NodeProperty;
 import hudson.util.FormApply;
 import hudson.util.XStream2;
@@ -78,6 +80,13 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
 
     public static final String JENKINS_LABEL = "jenkins/label";
     public static final String JENKINS_LABEL_DIGEST = "jenkins/label-digest";
+
+    /**
+     * The run this pod template is associated with.
+     * Only applicable to pod templates defined by the `podTemplate` step.
+     */
+    @CheckForNull
+    private transient Run<?, ?> run;
 
     /**
      * Digest function that is used to compute the kubernetes label "jenkins/label-digest"
@@ -188,6 +197,8 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
      * List of yaml fragments used for transient pod templates. Never persisted
      */
     private transient List<String> yamls;
+
+    private transient boolean readonlyFromUi;
 
     @NonNull
     public String getId() {
@@ -646,7 +657,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     @POST
     public HttpResponse doDoDelete(@AncestorInPath PodTemplateGroup owner) throws IOException {
         Jenkins j = Jenkins.get();
-        j.checkPermission(Jenkins.ADMINISTER);
+        j.checkPermission(Jenkins.MANAGE);
         if (owner == null) {
             throw new IllegalStateException("Cloud could not be found");
         }
@@ -660,7 +671,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     public HttpResponse doConfigSubmit(StaplerRequest req, @AncestorInPath PodTemplateGroup owner)
             throws IOException, ServletException, Descriptor.FormException {
         Jenkins j = Jenkins.get();
-        j.checkPermission(Jenkins.ADMINISTER);
+        j.checkPermission(Jenkins.MANAGE);
         if (owner == null) {
             throw new IllegalStateException("Cloud could not be found");
         }
@@ -1048,12 +1059,34 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     @Override
     public void save() {}
 
+    public boolean isReadonlyFromUi() {
+        return readonlyFromUi;
+    }
+
+    public void setReadonlyFromUi(boolean readonlyFromUi) {
+        this.readonlyFromUi = readonlyFromUi;
+    }
+
+    public void setRun(Run<?, ?> run) {
+        this.run = run;
+    }
+
+    @CheckForNull
+    public Run<?, ?> getRun() {
+        return run;
+    }
+
     @Extension
     public static class DescriptorImpl extends Descriptor<PodTemplate> {
 
         static final String[] STRING_FIELDS = {
             "activeDeadlineSeconds", "idleMinutes", "instanceCap", "slaveConnectTimeout",
         };
+
+        @NonNull
+        public Permission getRequiredGlobalConfigPagePermission() {
+            return Jenkins.MANAGE;
+        }
 
         public DescriptorImpl() {
             for (String field : STRING_FIELDS) {

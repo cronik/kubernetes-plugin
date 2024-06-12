@@ -13,7 +13,7 @@ spec:
   serviceAccountName: jenkins
   containers:
   - name: jenkins
-    image: maven:3.9.6-eclipse-temurin-17
+    image: maven:3.9.7-eclipse-temurin-17
     command:
       - sleep
     args:
@@ -65,11 +65,14 @@ rules:
   resources: ["pods/log"]
   verbs: ["get","list","watch"]
 - apiGroups: [""]
+  resources: ["pods/eviction"]
+  verbs: ["create"]
+- apiGroups: [""]
   resources: ["events"]
   verbs: ["watch"]
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["list"]
+  verbs: ["list","get","patch","update"] # KubernetesPipelineRJRTest.restartDuringPodLaunch
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["create","delete","get","list","patch","update","watch"]
