@@ -83,6 +83,7 @@ import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplateUtils;
 import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecorator;
 import org.csanchez.jenkins.plugins.kubernetes.pod.decorator.PodDecoratorException;
+import org.csanchez.jenkins.plugins.kubernetes.pod.retention.Reaper;
 import org.hamcrest.MatcherAssert;
 import org.htmlunit.html.DomNodeUtil;
 import org.htmlunit.html.HtmlElement;
@@ -104,7 +105,6 @@ import org.junit.rules.TemporaryFolder;
 import org.jvnet.hudson.test.FlagRule;
 import org.jvnet.hudson.test.Issue;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.jvnet.hudson.test.JenkinsRuleNonLocalhost;
 import org.jvnet.hudson.test.LoggerRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.TestExtension;
@@ -435,7 +435,7 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
         r.assertLogContains("The value of WILL.NOT is ", b);
     }
 
-    private void assertEnvVars(JenkinsRuleNonLocalhost r2, WorkflowRun b) throws Exception {
+    private void assertEnvVars(JenkinsRule r2, WorkflowRun b) throws Exception {
         r.assertLogNotContains(POD_ENV_VAR_FROM_SECRET_VALUE, b);
         r.assertLogNotContains(CONTAINER_ENV_VAR_FROM_SECRET_VALUE, b);
 
@@ -847,7 +847,9 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
 
     @Test
     public void invalidImageGetsCancelled() throws Exception {
+        Reaper.TerminateAgentOnImagePullBackOff.BACKOFF_EVENTS_LIMIT = 2;
         r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+        r.assertLogContains("Image pull backoff detected, waiting for image to be available.", b);
         r.assertLogContains("Queue task was cancelled", b);
     }
 
