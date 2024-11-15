@@ -293,7 +293,7 @@ public class PodTemplateBuilder {
                 .findFirst();
         Container agentContainer = agentOpt.orElse(new ContainerBuilder()
                 .withName(agentContainerName)
-                .withVolumeMounts(volumeMounts.values().toArray(VolumeMount[]::new))
+                .withVolumeMounts(volumes.mounts.values().toArray(VolumeMount[]::new))
                 .build());
         if (agentOpt.isEmpty()) {
             pod.getSpec().getContainers().add(agentContainer);
