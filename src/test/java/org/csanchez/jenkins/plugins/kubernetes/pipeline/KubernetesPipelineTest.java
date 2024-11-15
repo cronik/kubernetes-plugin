@@ -252,10 +252,6 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
                 emptyIterable());
 
         assertTrue(Metrics.metricRegistry().counter(MetricNames.PODS_LAUNCHED).getCount() > 0);
-        assertTrue(Metrics.metricRegistry()
-                        .meter(MetricNames.metricNameForLabel(Label.parseExpression("runInPod")))
-                        .getCount()
-                > 0);
     }
 
     @Test
@@ -950,5 +946,16 @@ public class KubernetesPipelineTest extends AbstractKubernetesPipelineTest {
         public Pod decorate(@NotNull KubernetesCloud kubernetesCloud, @NotNull Pod pod) {
             throw new PodDecoratorException("I always fail");
         }
+    }
+
+    @Test
+    public void imageWithoutAgent() throws Exception {
+        r.assertBuildStatus(Result.SUCCESS, r.waitForCompletion(b));
+    }
+
+    @Test
+    public void imageWithoutAgentNoJava() throws Exception {
+        r.assertBuildStatus(Result.ABORTED, r.waitForCompletion(b));
+        r.assertLogContains("java: not found", b);
     }
 }

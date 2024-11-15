@@ -61,6 +61,10 @@ public class KubernetesCloudFIPSTest {
     @LocalData
     public void nonCompliantCloudsAreCleanedTest() {
         assertThat("compliant-cloud is loaded", r.jenkins.getCloud("compliant-cloud"), notNullValue());
+        assertThat(
+                "no certificate is a valid cloud",
+                r.jenkins.getCloud("no-certificate-compliant-cloud"),
+                notNullValue());
         assertThat("with-skip-tls is not loaded", r.jenkins.getCloud("with-skip-tls"), nullValue());
         assertThat("with-http-endpoint is not loaded", r.jenkins.getCloud("with-http-endpoint"), nullValue());
         assertThat("with-invalid-cert is not loaded", r.jenkins.getCloud("with-invalid-cert"), nullValue());
@@ -77,26 +81,32 @@ public class KubernetesCloudFIPSTest {
                 .orElseGet(KubernetesCloud.DescriptorImpl::new);
         assertThat(
                 "Valid url doesn't raise error",
-                descriptor.doCheckServerUrl("https://eample.org").getMessage(),
+                descriptor.doCheckServerUrl(r.jenkins, "https://eample.org").getMessage(),
                 nullValue());
         assertThat(
                 "Invalid url raises error",
-                descriptor.doCheckServerUrl("http://eample.org").getMessage(),
+                descriptor.doCheckServerUrl(r.jenkins, "http://eample.org").getMessage(),
                 notNullValue());
         assertThat(
                 "Valid cert doesn't raise error",
-                descriptor.doCheckServerCertificate(getCert("rsa2048")).getMessage(),
+                descriptor
+                        .doCheckServerCertificate(r.jenkins, getCert("rsa2048"))
+                        .getMessage(),
                 nullValue());
         assertThat(
                 "Invalid cert raises error",
-                descriptor.doCheckServerCertificate(getCert("rsa1024")).getMessage(),
+                descriptor
+                        .doCheckServerCertificate(r.jenkins, getCert("rsa1024"))
+                        .getMessage(),
                 notNullValue());
         assertThat(
                 "No TLS skip doesn't raise error",
-                descriptor.doCheckSkipTlsVerify(false).getMessage(),
+                descriptor.doCheckSkipTlsVerify(r.jenkins, false).getMessage(),
                 nullValue());
         assertThat(
-                "TLS skip raises error", descriptor.doCheckSkipTlsVerify(true).getMessage(), notNullValue());
+                "TLS skip raises error",
+                descriptor.doCheckSkipTlsVerify(r.jenkins, true).getMessage(),
+                notNullValue());
     }
 
     private String getCert(String alg) throws IOException {
