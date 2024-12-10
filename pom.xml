@@ -43,9 +43,8 @@
     <changelist>4296-adp1</changelist>
     <jenkins.host.address />
     <slaveAgentPort />
-    <jenkins.version>2.426.3</jenkins.version>
-    <bom>2.426.x</bom>
-    <bom.version>2857.v01a_0144eb_20b_</bom.version>
+    <jenkins.baseline>2.426</jenkins.baseline>
+    <jenkins.version>${jenkins.baseline}.3</jenkins.version>
     <no-test-jar>false</no-test-jar>
     <useBeta>true</useBeta>
     <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
@@ -58,8 +57,8 @@
     <dependencies>
       <dependency>
         <groupId>io.jenkins.tools.bom</groupId>
-        <artifactId>bom-${bom}</artifactId>
-        <version>${bom.version}</version>
+        <artifactId>bom-${jenkins.baseline}.x</artifactId>
+        <version>2857.v01a_0144eb_20b_</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -349,5 +348,47 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>merge-jacoco-reports</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>merge</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <fileSets>
+                    <fileSet>
+                      <directory>${project.build.directory}</directory>
+                      <includes>
+                        <include>jacoco-*.exec</include>
+                      </includes>
+                    </fileSet>
+                  </fileSets>
+                </configuration>
+              </execution>
+              <execution>
+                <id>build-report</id>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <formats>XML</formats>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
 </project>
