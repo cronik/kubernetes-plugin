@@ -17,6 +17,11 @@ public class MetricNames {
     public static final String PODS_LAUNCHED = PREFIX + ".pods.launched";
     public static final String EPHEMERAL_CONTAINERS_CREATED = PREFIX + ".containers.ephemeral.created";
     public static final String EPHEMERAL_CONTAINERS_CREATION_FAILED = PREFIX + ".containers.ephemeral.creation.failed";
+    public static final String EPHEMERAL_CONTAINERS_CREATION_RETRIED = PREFIX + ".containers.ephemeral.creation.retried";
+    public static final String EPHEMERAL_CONTAINERS_CREATION_DURATION =
+            PREFIX + ".containers.ephemeral.creation.duration";
+    public static final String EPHEMERAL_CONTAINERS_CREATION_WAIT_DURATION =
+            PREFIX + ".containers.ephemeral.creation.wait.duration";
 
     public static String metricNameForPodStatus(String status) {
         String formattedStatus = status == null ? "null" : status.toLowerCase(Locale.getDefault());
