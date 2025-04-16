@@ -72,7 +72,7 @@ public class EphemeralContainerStepExecution extends GeneralNonBlockingStepExecu
     private static final int PATCH_RETRY_MAX_WAIT =
             Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".patchRetryMaxWaitSecs", 2);
     private static final int START_MAX_RETRY =
-            Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".startMaxRetry", 2);
+            Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".startMaxRetry", 3);
     private static final int START_RETRY_MAX_WAIT =
             Integer.getInteger(EphemeralContainerStepExecution.class.getName() + ".startRetryMaxWaitSecs", 2);
     private static final Set<String> START_RETRY_REASONS = Collections.singleton("StartError");
