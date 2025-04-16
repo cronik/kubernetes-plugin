@@ -10,7 +10,6 @@ import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.domains.URIRequirementBuilder;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.Main;
 import hudson.TcpSlaveAgentListener;
@@ -35,6 +34,7 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.VersionInfo;
 import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
+import jakarta.servlet.ServletException;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.ConnectException;
@@ -61,7 +61,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.servlet.ServletException;
 import jenkins.authentication.tokens.api.AuthenticationTokens;
 import jenkins.bouncycastle.api.PEMEncodable;
 import jenkins.metrics.api.Metrics;
@@ -87,8 +86,8 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.Stapler;
-import org.kohsuke.stapler.StaplerRequest;
-import org.kohsuke.stapler.StaplerResponse;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 import org.kohsuke.stapler.verb.POST;
 
@@ -190,11 +189,6 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      * @param source Source Kubernetes cloud implementation
      * @since 0.13
      */
-    @SuppressFBWarnings(
-            value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR",
-            justification = "Problem raised for calling unmarshal. Ignoring the "
-                    + "warning cause it leads to too many changes, with "
-                    + "unclear impact.")
     public KubernetesCloud(@NonNull String name, @NonNull KubernetesCloud source) {
         super(name);
         XStream2 xs = new XStream2();
@@ -607,7 +601,6 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      *
      * @return Kubernetes client.
      */
-    @SuppressFBWarnings({"IS2_INCONSISTENT_SYNC", "DC_DOUBLECHECK"})
     public KubernetesClient connect() throws KubernetesAuthException, IOException {
 
         LOGGER.log(Level.FINEST, "Building connection to Kubernetes {0} URL {1} namespace {2}", new String[] {
@@ -941,7 +934,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      * Creating a new template.
      */
     @POST
-    public HttpResponse doCreate(StaplerRequest req, StaplerResponse rsp)
+    public HttpResponse doCreate(StaplerRequest2 req, StaplerResponse2 rsp)
             throws IOException, ServletException, Descriptor.FormException {
         Jenkins j = Jenkins.get();
         j.checkPermission(Jenkins.MANAGE);
@@ -1171,7 +1164,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
                 LOGGER.log(
                         Level.WARNING,
                         () -> "Unsupported owner type " + (owner == null ? "null" : owner.getClass()) + " (url: "
-                                + Stapler.getCurrentRequest().getOriginalRequestURI()
+                                + Stapler.getCurrentRequest2().getOriginalRequestURI()
                                 + "). Please report this issue to the plugin maintainers.");
                 return false;
             }
@@ -1187,7 +1180,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
             } else {
                 throw new IllegalArgumentException(
                         "Unsupported owner type " + (owner == null ? "null" : owner.getClass()) + " (url: "
-                                + Stapler.getCurrentRequest().getOriginalRequestURI()
+                                + Stapler.getCurrentRequest2().getOriginalRequestURI()
                                 + "). Please report this issue to the plugin maintainers.");
             }
         }
@@ -1329,7 +1322,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
     }
 
     @Override
-    public Cloud reconfigure(@NonNull StaplerRequest req, JSONObject form) throws Descriptor.FormException {
+    public Cloud reconfigure(@NonNull StaplerRequest2 req, JSONObject form) throws Descriptor.FormException {
         // cloud configuration doesn't contain templates anymore, so just keep existing ones.
         var newInstance = (KubernetesCloud) super.reconfigure(req, form);
         newInstance.setTemplates(this.templates);

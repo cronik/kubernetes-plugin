@@ -2,7 +2,6 @@ package org.csanchez.jenkins.plugins.kubernetes;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.Util;
 import hudson.model.AbstractDescribableImpl;
@@ -20,6 +19,7 @@ import hudson.util.FormApply;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import jakarta.servlet.ServletException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.io.StringReader;
@@ -37,7 +37,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.servlet.ServletException;
 import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 import org.apache.commons.lang.StringUtils;
@@ -54,7 +53,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.HttpRedirect;
 import org.kohsuke.stapler.HttpResponse;
-import org.kohsuke.stapler.StaplerRequest;
+import org.kohsuke.stapler.StaplerRequest2;
 import org.kohsuke.stapler.verb.POST;
 
 /**
@@ -258,11 +257,6 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         recomputeLabelDerivedFields();
     }
 
-    @SuppressFBWarnings(
-            value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR",
-            justification = "Warning raised for the call to unmarshal. Ignoring as"
-                    + " it would require too many changes and uncertain "
-                    + "impact.")
     public PodTemplate(PodTemplate from) {
         XStream2 xs = new XStream2();
         xs.unmarshal(XStream2.getDefaultDriver().createReader(new StringReader(xs.toXML(from))), this);
@@ -276,10 +270,6 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         this(null, image, volumes);
     }
 
-    @SuppressFBWarnings(
-            value = "MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR",
-            justification = "Warning raised for calling the getContainers method. As "
-                    + "this current method is deprecated anyway, it is " + "probably safer to not change it.")
     @Deprecated
     PodTemplate(String name, String image, List<? extends PodVolume> volumes) {
         this(name, volumes, Collections.emptyList());
@@ -367,9 +357,6 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     }
 
     @Deprecated
-    @SuppressFBWarnings(
-            value = "NM_CONFUSING",
-            justification = "Naming confusion with a getRemoteFS method, but the current one is deprecated.")
     public String getRemoteFs() {
         return getFirstContainer().map(ContainerTemplate::getWorkingDir).orElse(ContainerTemplate.DEFAULT_WORKING_DIR);
     }
@@ -691,7 +678,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     }
 
     @POST
-    public HttpResponse doConfigSubmit(StaplerRequest req, @AncestorInPath PodTemplateGroup owner)
+    public HttpResponse doConfigSubmit(StaplerRequest2 req, @AncestorInPath PodTemplateGroup owner)
             throws IOException, ServletException, Descriptor.FormException {
         Jenkins j = Jenkins.get();
         j.checkPermission(Jenkins.MANAGE);
@@ -705,7 +692,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
         return FormApply.success(owner.getPodTemplateGroupUrl());
     }
 
-    private PodTemplate reconfigure(@NonNull final StaplerRequest req, JSONObject form)
+    private PodTemplate reconfigure(@NonNull final StaplerRequest2 req, JSONObject form)
             throws Descriptor.FormException {
         if (form == null) {
             return null;
@@ -851,7 +838,7 @@ public class PodTemplate extends AbstractDescribableImpl<PodTemplate> implements
     }
 
     @NonNull
-    public List<ContainerTemplate> getContainers() {
+    public final List<ContainerTemplate> getContainers() {
         if (containers == null) {
             return Collections.emptyList();
         }

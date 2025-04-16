@@ -35,8 +35,8 @@ import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
 import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.kubernetes.auth.KubernetesAuthException;
 import org.kohsuke.stapler.QueryParameter;
-import org.kohsuke.stapler.StaplerRequest;
-import org.kohsuke.stapler.StaplerResponse;
+import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.StaplerResponse2;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.framework.io.ByteBuffer;
 import org.kohsuke.stapler.framework.io.LargeText;
@@ -141,7 +141,7 @@ public class KubernetesComputer extends AbstractCloudComputer<KubernetesSlave> i
         return Collections.emptyList();
     }
 
-    public void doContainerLog(@QueryParameter String containerId, StaplerRequest req, StaplerResponse rsp)
+    public void doContainerLog(@QueryParameter String containerId, StaplerRequest2 req, StaplerResponse2 rsp)
             throws KubernetesAuthException, IOException {
         Jenkins.get().checkPermission(Computer.EXTENDED_READ);
 
