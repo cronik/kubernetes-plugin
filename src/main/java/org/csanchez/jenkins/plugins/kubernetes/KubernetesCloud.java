@@ -23,6 +23,7 @@ import hudson.model.ItemGroup;
 import hudson.model.Label;
 import hudson.security.ACL;
 import hudson.security.AccessControlled;
+import hudson.security.Permission;
 import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner;
 import hudson.util.FormApply;
@@ -752,8 +753,14 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
 
     @Override
     public void replaceTemplate(PodTemplate oldTemplate, PodTemplate newTemplate) {
+        this.checkManagePermission();
         this.removeTemplate(oldTemplate);
         this.addTemplate(newTemplate);
+    }
+
+    @Override
+    public Permission getManagePermission() {
+        return Jenkins.MANAGE;
     }
 
     @Override
@@ -820,6 +827,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      */
     @Override
     public void addTemplate(PodTemplate t) {
+        this.checkManagePermission();
         this.templates.add(t);
         // t.parent = this;
     }
@@ -831,6 +839,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
      */
     @Override
     public void removeTemplate(PodTemplate t) {
+        this.checkManagePermission();
         this.templates.remove(t);
     }
 
@@ -937,7 +946,7 @@ public class KubernetesCloud extends Cloud implements PodTemplateGroup {
     public HttpResponse doCreate(StaplerRequest2 req, StaplerResponse2 rsp)
             throws IOException, ServletException, Descriptor.FormException {
         Jenkins j = Jenkins.get();
-        j.checkPermission(Jenkins.MANAGE);
+        this.checkManagePermission();
         PodTemplate newTemplate = getTemplateDescriptor().newInstance(req, req.getSubmittedForm());
         addTemplate(newTemplate);
         j.save();
