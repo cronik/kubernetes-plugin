@@ -10,7 +10,7 @@
 
   <groupId>org.csanchez.jenkins.plugins</groupId>
   <artifactId>kubernetes</artifactId>
-  <version>4333-adp1</version>
+  <version>4336-adp1</version>
   <packaging>hpi</packaging>
   <name>Kubernetes plugin</name>
   <description>Jenkins plugin to run dynamic agents in a Kubernetes cluster</description>
@@ -40,7 +40,7 @@
   </scm>
 
   <properties>
-    <changelist>4333-adp1</changelist>
+    <changelist>4336-adp1</changelist>
     <jenkins.host.address />
     <slaveAgentPort />
     <jenkins.baseline>2.479</jenkins.baseline>
